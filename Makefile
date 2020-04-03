@@ -720,6 +720,8 @@ ifeq ($(CREATE_TEST_NAMESPACE),true)
 	@echo "Deleting test namespace $(TEST_NAMESPACE)"
 	kubectl delete namespace $(TEST_NAMESPACE) --force --grace-period=0 && echo "deleted namespace" || true
 endif
+	kubectl delete clusterrole "$(TEST_NAMESPACE)-coherence-operator" || true
+	kubectl delete clusterrolebinding "$(TEST_NAMESPACE)-coherence-operator" || true
 
 # ---------------------------------------------------------------------------
 # Delete all resource from the test namespace
