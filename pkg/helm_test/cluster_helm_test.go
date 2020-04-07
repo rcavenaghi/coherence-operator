@@ -27,7 +27,7 @@ func TestClusterFromMinimalYaml(t *testing.T) {
 	result, cluster, err := CreateCluster("minimal-cluster.yaml")
 	g.Expect(err).NotTo(HaveOccurred())
 
-	g.Expect(result.Size()).To(Equal(3))
+	g.Expect(result.Size()).To(Equal(2))
 
 	// should have created config map
 	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-scripts"
@@ -61,7 +61,7 @@ func TestClusterImplicitRoleOneReplica(t *testing.T) {
 	result, cluster, err := CreateCluster("cluster-test-implicit-role-one-replica.yaml")
 	g.Expect(err).NotTo(HaveOccurred())
 
-	g.Expect(result.Size()).To(Equal(3))
+	g.Expect(result.Size()).To(Equal(2))
 
 	// should have created config map
 	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-scripts"
@@ -95,7 +95,7 @@ func TestClusterExplicitRoles(t *testing.T) {
 	result, cluster, err := CreateCluster("cluster-test-explicit-roles.yaml")
 	g.Expect(err).NotTo(HaveOccurred())
 
-	g.Expect(result.Size()).To(Equal(6))
+	g.Expect(result.Size()).To(Equal(4))
 
 	// should have created config map for data role
 	name := cluster.GetFullRoleName("data") + "-scripts"
@@ -146,7 +146,7 @@ func TestClusterExplicitRolesWithDefaultReplicas(t *testing.T) {
 	result, cluster, err := CreateCluster("cluster-test-explicit-roles-with-default.yaml")
 	g.Expect(err).NotTo(HaveOccurred())
 
-	g.Expect(result.Size()).To(Equal(6))
+	g.Expect(result.Size()).To(Equal(4))
 
 	// should have created config map for data role
 	name := cluster.GetFullRoleName("data") + "-scripts"
