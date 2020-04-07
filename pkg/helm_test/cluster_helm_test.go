@@ -29,14 +29,8 @@ func TestClusterFromMinimalYaml(t *testing.T) {
 
 	g.Expect(result.Size()).To(Equal(2))
 
-	// should have created config map
-	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-scripts"
-	cm := corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
 	// should have created one headless Service
-	name = cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
+	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -63,14 +57,8 @@ func TestClusterImplicitRoleOneReplica(t *testing.T) {
 
 	g.Expect(result.Size()).To(Equal(2))
 
-	// should have created config map
-	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-scripts"
-	cm := corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
 	// should have created one headless Service
-	name = cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
+	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -97,20 +85,8 @@ func TestClusterExplicitRoles(t *testing.T) {
 
 	g.Expect(result.Size()).To(Equal(4))
 
-	// should have created config map for data role
-	name := cluster.GetFullRoleName("data") + "-scripts"
-	cm := corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	// should have created config map for proxy role
-	name = cluster.GetFullRoleName("proxy") + "-scripts"
-	cm = corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
 	// should have created headless Service for data role
-	name = cluster.GetFullRoleName("data") + "-headless"
+	name := cluster.GetFullRoleName("data") + "-headless"
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -148,20 +124,8 @@ func TestClusterExplicitRolesWithDefaultReplicas(t *testing.T) {
 
 	g.Expect(result.Size()).To(Equal(4))
 
-	// should have created config map for data role
-	name := cluster.GetFullRoleName("data") + "-scripts"
-	cm := corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	// should have created config map for proxy role
-	name = cluster.GetFullRoleName("proxy") + "-scripts"
-	cm = corev1.ConfigMap{}
-	err = result.Get(name, &cm)
-	g.Expect(err).NotTo(HaveOccurred())
-
 	// should have created headless Service for data role
-	name = cluster.GetFullRoleName("data") + "-headless"
+	name := cluster.GetFullRoleName("data") + "-headless"
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
