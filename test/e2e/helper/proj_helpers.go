@@ -159,38 +159,12 @@ func AssumeRunningCompatibilityTests(t *testing.T) {
 	}
 }
 
-func FindBuildDir() (string, error) {
-	pd, err := FindProjectRootDir()
-	if err != nil {
-		return "", err
-	}
-	return pd + string(os.PathSeparator) + buildDir, nil
-}
-
 func FindCrdDir() (string, error) {
 	pd, err := FindProjectRootDir()
 	if err != nil {
 		return "", err
 	}
 	return pd + string(os.PathSeparator) + crds, nil
-}
-
-func FindBuildOutputDir() (string, error) {
-	pd, err := FindProjectRootDir()
-	if err != nil {
-		return "", err
-	}
-
-	return pd + string(os.PathSeparator) + outDir, nil
-}
-
-func FindHelmChartsDir() (string, error) {
-	pd, err := FindProjectRootDir()
-	if err != nil {
-		return "", err
-	}
-
-	return pd + string(os.PathSeparator) + chartDir, nil
 }
 
 func FindCoherenceHelmChartDir() (string, error) {
@@ -264,8 +238,8 @@ func NewCoherenceClusterFromYaml(namespace string, files ...string) (coh.Coheren
 func createCoherenceClusterFromYaml(namespace string, files ...string) (coh.CoherenceCluster, error) {
 	c := coh.CoherenceCluster{}
 
-	l := coherenceClusterLoader{}
-	err := l.loadYaml(&c, files...)
+	l := CoherenceClusterLoader{}
+	err := l.LoadYaml(&c, files...)
 
 	if namespace != "" {
 		c.SetNamespace(namespace)
@@ -274,15 +248,15 @@ func createCoherenceClusterFromYaml(namespace string, files ...string) (coh.Cohe
 	return c, err
 }
 
-type coherenceClusterLoader struct {
+type CoherenceClusterLoader struct {
 }
 
 // Load this CoherenceCluster from the specified yaml file
-func (in *coherenceClusterLoader) FromYaml(cluster *coh.CoherenceCluster, files ...string) error {
-	return in.loadYaml(cluster, files...)
+func (in *CoherenceClusterLoader) FromYaml(cluster *coh.CoherenceCluster, files ...string) error {
+	return in.LoadYaml(cluster, files...)
 }
 
-func (in *coherenceClusterLoader) loadYaml(cluster *coh.CoherenceCluster, files ...string) error {
+func (in *CoherenceClusterLoader) LoadYaml(cluster *coh.CoherenceCluster, files ...string) error {
 	if in == nil || files == nil {
 		return nil
 	}
@@ -292,7 +266,7 @@ func (in *coherenceClusterLoader) loadYaml(cluster *coh.CoherenceCluster, files 
 	_, c, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(c)
 	common := dir + string(os.PathSeparator) + "common-coherence-cluster.yaml"
-	err := in.loadYamlFromFile(cluster, common)
+	err := in.LoadYamlFromFile(cluster, common)
 	if err != nil {
 		return err
 	}
@@ -302,7 +276,7 @@ func (in *coherenceClusterLoader) loadYaml(cluster *coh.CoherenceCluster, files 
 	cluster.Spec.ImagePullSecrets = append(cluster.Spec.ImagePullSecrets, secrets...)
 
 	for _, file := range files {
-		err := in.loadYamlFromFile(cluster, file)
+		err := in.LoadYamlFromFile(cluster, file)
 		if err != nil {
 			return err
 		}
@@ -311,7 +285,7 @@ func (in *coherenceClusterLoader) loadYaml(cluster *coh.CoherenceCluster, files 
 	return nil
 }
 
-func (in *coherenceClusterLoader) loadYamlFromFile(cluster *coh.CoherenceCluster, file string) error {
+func (in *CoherenceClusterLoader) LoadYamlFromFile(cluster *coh.CoherenceCluster, file string) error {
 	if in == nil || file == "" {
 		return nil
 	}
@@ -337,7 +311,7 @@ func (in *coherenceClusterLoader) loadYamlFromFile(cluster *coh.CoherenceCluster
 	return nil
 }
 
-func (in *coherenceClusterLoader) findActualFile(file string) (string, error) {
+func (in *CoherenceClusterLoader) findActualFile(file string) (string, error) {
 	_, err := os.Stat(file)
 	if err == nil {
 		return file, nil

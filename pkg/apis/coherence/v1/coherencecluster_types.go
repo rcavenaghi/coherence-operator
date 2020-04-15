@@ -7,6 +7,7 @@
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 )
@@ -218,6 +219,17 @@ func (in *CoherenceCluster) GetRoles() map[string]CoherenceRoleSpec {
 	return m
 }
 
+// Get the role's StatefulSet headless service name.
+func (in *CoherenceCluster) GetHeadlessServiceNameForRole(role *CoherenceRoleSpec) string {
+	return in.GetHeadlessServiceNameForRoleName(role.GetRoleName())
+}
+
+// Get the role's StatefulSet headless service name.
+func (in *CoherenceCluster) GetHeadlessServiceNameForRoleName(roleName string) string {
+	// We use the same name as the full role name for the headless service, i.e. <cluster-name>-<role-name>
+	return in.GetFullRoleName(roleName)
+}
+
 // Obtain the full name for  a role.
 func (in *CoherenceCluster) GetFullRoleName(role string) string {
 	if in == nil {
@@ -296,4 +308,32 @@ func (in *CoherenceCluster) SetRoleStatus(roleName string, ready bool, pods int3
 	if in != nil {
 		in.Status.SetRoleStatus(roleName, ready, pods, status)
 	}
+}
+
+// Get the service account name for the cluster.
+func (in *CoherenceCluster) GetServiceAccountName() string {
+	if in != nil && in.Spec.ServiceAccountName != DefaultServiceAccount {
+		return in.Spec.ServiceAccountName
+	}
+	return ""
+}
+
+func (in *CoherenceCluster) GetImagePullSecrets() []corev1.LocalObjectReference {
+	var secrets []corev1.LocalObjectReference
+
+	for _, s := range in.Spec.ImagePullSecrets {
+		secrets = append(secrets, corev1.LocalObjectReference{
+			Name: s.Name,
+		})
+	}
+
+	return secrets
+}
+
+// Get the health check port
+func (in *CoherenceCluster) GetHealthPort() int32 {
+	if in != nil && in.Spec.HealthPort != nil {
+		return *in.Spec.HealthPort
+	}
+	return DefaultHealthPort
 }

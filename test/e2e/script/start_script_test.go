@@ -34,7 +34,7 @@ func TestCoherenceDefaults(t *testing.T) {
 
 	// Assert default environment variables
 	g.Expect(appData.GetEnv("COH_MGMT_ENABLED")).To(Equal("false"))
-	g.Expect(appData.GetEnv("COH_MGMT_HTTP_PORT")).To(Equal("30000"))
+	g.Expect(appData.GetEnv("COH_MGMT_PORT")).To(Equal("30000"))
 	g.Expect(appData.GetEnv("COH_METRICS_ENABLED")).To(Equal("false"))
 	g.Expect(appData.GetEnv("COH_METRICS_PORT")).To(Equal("9612"))
 

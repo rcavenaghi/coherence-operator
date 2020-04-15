@@ -463,9 +463,9 @@ commonConfiguration()
     fi
 
 #   Configure the port to use for management over rest
-    if [[ "${COH_MGMT_HTTP_PORT}" != "" ]]
+    if [[ "${COH_MGMT_PORT}" != "" ]]
     then
-        PROPS="${PROPS} -Dcoherence.management.http.port=${COH_MGMT_HTTP_PORT}"
+        PROPS="${PROPS} -Dcoherence.management.http.port=${COH_MGMT_PORT}"
     fi
 
 #   Configure the Coherence member's site and rack

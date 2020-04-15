@@ -10,6 +10,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/helm/flags"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/spf13/pflag"
+	"k8s.io/utils/pointer"
 	"os"
 	"os/user"
 	"strings"
@@ -158,7 +159,7 @@ func GetDefaultCoherenceImage() *string {
 	if ok {
 		return &img
 	}
-	return nil
+	return pointer.StringPtr("")
 }
 
 func (f *CoherenceOperatorFlags) GetCoherenceImage() *string {
@@ -173,7 +174,7 @@ func GetDefaultCoherenceUtilsImage() *string {
 	if ok {
 		return &img
 	}
-	return nil
+	return pointer.StringPtr("")
 }
 
 func (f *CoherenceOperatorFlags) GetCoherenceUtilsImage() *string {

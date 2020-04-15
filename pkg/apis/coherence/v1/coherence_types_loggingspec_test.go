@@ -9,15 +9,18 @@ package v1_test
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	coherence "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	"os"
+	"testing"
+	"text/template"
 )
 
 var _ = Describe("Testing LoggingSpec struct", func() {
 
 	Context("Copying a LoggingSpec using DeepCopyWithDefaults", func() {
-		var original *coherence.LoggingSpec
-		var defaults *coherence.LoggingSpec
-		var clone *coherence.LoggingSpec
+		var original *coh.LoggingSpec
+		var defaults *coh.LoggingSpec
+		var clone *coh.LoggingSpec
 
 		JustBeforeEach(func() {
 			clone = original.DeepCopyWithDefaults(defaults)
@@ -36,10 +39,10 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("defaults is nil", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: stringPtr("loggingMap"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
 				defaults = nil
@@ -60,10 +63,10 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("original is nil", func() {
 			BeforeEach(func() {
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: stringPtr("loggingMap"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
 				original = nil
@@ -84,16 +87,16 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("all original fields are set", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: stringPtr("loggingMap"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging2.properties"),
 					ConfigMapName: stringPtr("loggingMap2"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(false)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(false)},
 				}
 			})
 
@@ -112,16 +115,16 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("original Level is nil", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: stringPtr("loggingMap"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging2.properties"),
 					ConfigMapName: stringPtr("loggingMap2"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(false)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(false)},
 				}
 			})
 
@@ -140,16 +143,16 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("original ConfigFile is nil", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    nil,
 					ConfigMapName: stringPtr("loggingMap"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging2.properties"),
 					ConfigMapName: stringPtr("loggingMap2"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(false)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(false)},
 				}
 			})
 
@@ -168,16 +171,16 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("original ConfigMapName is nil", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: nil,
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(true)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(true)},
 				}
 
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging2.properties"),
 					ConfigMapName: stringPtr("loggingMap2"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(false)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(false)},
 				}
 			})
 
@@ -196,16 +199,16 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 
 		When("original Fluentd is nil", func() {
 			BeforeEach(func() {
-				original = &coherence.LoggingSpec{
+				original = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging.properties"),
 					ConfigMapName: stringPtr("loggingMap"),
 					Fluentd:       nil,
 				}
 
-				defaults = &coherence.LoggingSpec{
+				defaults = &coh.LoggingSpec{
 					ConfigFile:    stringPtr("logging2.properties"),
 					ConfigMapName: stringPtr("loggingMap2"),
-					Fluentd:       &coherence.FluentdSpec{Enabled: boolPtr(false)},
+					Fluentd:       &coh.FluentdSpec{Enabled: boolPtr(false)},
 				}
 			})
 
@@ -223,3 +226,21 @@ var _ = Describe("Testing LoggingSpec struct", func() {
 		})
 	})
 })
+
+func TestLoggingSpec_CreateConfigMap(t *testing.T) {
+	l := coh.LoggingConfigTemplate{
+		ClusterName: "test-cluster",
+		RoleName:    "storage",
+		Logging:     &coh.LoggingSpec{},
+	}
+
+	temp, err := template.New("efk").Parse(coh.EfkConfig)
+	if err != nil {
+		panic(err)
+	}
+	err = temp.Execute(os.Stdout, l)
+	if err != nil {
+		panic(err)
+	}
+
+}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
+	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
 	"github.com/oracle/coherence-operator/pkg/flags"
 	"io/ioutil"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -27,11 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-)
-
-const (
-	// configName is the name of the internal Coherence Operator configuration secret.
-	configName = "coherence-operator-config"
 )
 
 var restHostAndPort string
@@ -131,30 +127,30 @@ func EnsureCRDsUsingClient(mgr manager.Manager, cohFlags *flags.CoherenceOperato
 func EnsureOperatorSecret(namespace string, c client.Client, log logr.Logger) error {
 	log.Info("Ensuring configuration secret")
 
-	err := c.Get(context.TODO(), types.NamespacedName{Name: configName, Namespace: namespace}, &corev1.Secret{})
+	err := c.Get(context.TODO(), types.NamespacedName{Name: coh.ConfigMapNameOperatorConfig, Namespace: namespace}, &corev1.Secret{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
-	log.Info("Operator Configuration: 'operatorhost' value set to " + restHostAndPort)
+	log.Info("Operator Configuration: '%s' value set to %s", coh.OperatorConfigKeyHost, restHostAndPort)
 
 	secret := &corev1.Secret{}
 	secret.SetNamespace(namespace)
-	secret.SetName(configName)
+	secret.SetName(coh.ConfigMapNameOperatorConfig)
 
 	if secret.StringData == nil {
 		secret.StringData = make(map[string]string)
 	}
 
-	secret.StringData["operatorhost"] = restHostAndPort
+	secret.StringData[coh.OperatorConfigKeyHost] = restHostAndPort
 
 	if errors.IsNotFound(err) {
 		// for some reason we're getting here even if the secret exists so delete it!!
 		_ = c.Delete(context.TODO(), secret)
-		log.Info("Creating secret " + configName + " in namespace " + namespace)
+		log.Info("Creating secret " + coh.ConfigMapNameOperatorConfig + " in namespace " + namespace)
 		err = c.Create(context.TODO(), secret)
 	} else {
-		log.Info("Updating secret " + configName + " in namespace " + namespace)
+		log.Info("Updating secret " + coh.ConfigMapNameOperatorConfig + " in namespace " + namespace)
 		err = c.Update(context.TODO(), secret)
 	}
 

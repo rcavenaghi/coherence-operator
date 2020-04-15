@@ -11,6 +11,7 @@ import (
 	cohv1 "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
 	. "github.com/oracle/coherence-operator/test/e2e/helper/matchers"
 	corev1 "k8s.io/api/core/v1"
+	"strconv"
 	"testing"
 )
 
@@ -66,7 +67,7 @@ func TestJvmJmxmpWhenSetForImplicitRole(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	g.Expect(container.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_ENABLED", Value: "true"}))
-	g.Expect(container.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: ""}))
+	g.Expect(container.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: strconv.FormatInt(int64(cohv1.DefaultJmxmpPort), 10)}))
 }
 
 func TestJvmJmxmpWhenDefaultSetInClusterWithExplicitRoles(t *testing.T) {
@@ -78,12 +79,12 @@ func TestJvmJmxmpWhenDefaultSetInClusterWithExplicitRoles(t *testing.T) {
 	dataContainer, err := findContainerForRole(result, cluster, "data", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_ENABLED", Value: "true"}))
-	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: ""}))
+	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: strconv.FormatInt(int64(cohv1.DefaultJmxmpPort), 10)}))
 
 	proxyContainer, err := findContainerForRole(result, cluster, "proxy", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(proxyContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_ENABLED", Value: "true"}))
-	g.Expect(proxyContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: ""}))
+	g.Expect(proxyContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: strconv.FormatInt(int64(cohv1.DefaultJmxmpPort), 10)}))
 }
 
 func TestJvmJmxmpWhenDefaultSetAndOverriddenInClusterWithExplicitRoles(t *testing.T) {
@@ -95,7 +96,7 @@ func TestJvmJmxmpWhenDefaultSetAndOverriddenInClusterWithExplicitRoles(t *testin
 	dataContainer, err := findContainerForRole(result, cluster, "data", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_ENABLED", Value: "true"}))
-	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: ""}))
+	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: strconv.FormatInt(int64(cohv1.DefaultJmxmpPort), 10)}))
 
 	proxyContainer, err := findContainerForRole(result, cluster, "proxy", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -112,7 +113,7 @@ func TestJvmJmxmpWhenSetInClusterWithExplicitRoles(t *testing.T) {
 	dataContainer, err := findContainerForRole(result, cluster, "data", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_ENABLED", Value: "true"}))
-	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: ""}))
+	g.Expect(dataContainer.Env).To(HaveEnvVar(corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: strconv.FormatInt(int64(cohv1.DefaultJmxmpPort), 10)}))
 
 	proxyContainer, err := findContainerForRole(result, cluster, "proxy", coherenceContainer)
 	g.Expect(err).NotTo(HaveOccurred())

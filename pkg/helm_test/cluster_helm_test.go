@@ -30,7 +30,7 @@ func TestClusterFromMinimalYaml(t *testing.T) {
 	g.Expect(result.Size()).To(Equal(2))
 
 	// should have created one headless Service
-	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
+	name := cluster.GetHeadlessServiceNameForRoleName(cohv1.DefaultRoleName)
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -58,7 +58,7 @@ func TestClusterImplicitRoleOneReplica(t *testing.T) {
 	g.Expect(result.Size()).To(Equal(2))
 
 	// should have created one headless Service
-	name := cluster.GetFullRoleName(cohv1.DefaultRoleName) + "-headless"
+	name := cluster.GetHeadlessServiceNameForRoleName(cohv1.DefaultRoleName)
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -86,13 +86,13 @@ func TestClusterExplicitRoles(t *testing.T) {
 	g.Expect(result.Size()).To(Equal(4))
 
 	// should have created headless Service for data role
-	name := cluster.GetFullRoleName("data") + "-headless"
+	name := cluster.GetHeadlessServiceNameForRoleName("data")
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	// should have created headless Service for data role
-	name = cluster.GetFullRoleName("proxy") + "-headless"
+	// should have created headless Service for proxy role
+	name = cluster.GetHeadlessServiceNameForRoleName("proxy")
 	svc = corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -125,13 +125,13 @@ func TestClusterExplicitRolesWithDefaultReplicas(t *testing.T) {
 	g.Expect(result.Size()).To(Equal(4))
 
 	// should have created headless Service for data role
-	name := cluster.GetFullRoleName("data") + "-headless"
+	name := cluster.GetHeadlessServiceNameForRoleName("data")
 	svc := corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	// should have created headless Service for data role
-	name = cluster.GetFullRoleName("proxy") + "-headless"
+	// should have created headless Service for proxy role
+	name = cluster.GetHeadlessServiceNameForRoleName("proxy")
 	svc = corev1.Service{}
 	err = result.Get(name, &svc)
 	g.Expect(err).NotTo(HaveOccurred())

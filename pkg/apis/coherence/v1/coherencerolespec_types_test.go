@@ -14,8 +14,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"testing"
 
-	coherence "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
 )
 
 var _ = Describe("Testing CoherenceRoleSpec struct", func() {
@@ -24,9 +26,9 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		var (
 			roleSpecOne = LoadCoherenceRoleFromCoherenceClusterYamlFile("full_role_one.yaml")
 			roleSpecTwo = LoadCoherenceRoleFromCoherenceClusterYamlFile("full_role_two.yaml")
-			original    *coherence.CoherenceRoleSpec
-			defaults    *coherence.CoherenceRoleSpec
-			clone       *coherence.CoherenceRoleSpec
+			original    *coh.CoherenceRoleSpec
+			defaults    *coh.CoherenceRoleSpec
+			clone       *coh.CoherenceRoleSpec
 		)
 
 		// just before every "It" this method is executed to actually do the cloning
@@ -255,14 +257,14 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- Application --------------------------------------------------------
 
 		Context("Application is merged", func() {
-			var appOne = coherence.ApplicationSpec{
+			var appOne = coh.ApplicationSpec{
 				Type:   stringPtr("java"),
 				Main:   stringPtr("main"),
 				LibDir: stringPtr("/lib"),
 			}
 
-			var appTwo = coherence.ApplicationSpec{
-				ImageSpec: coherence.ImageSpec{
+			var appTwo = coh.ApplicationSpec{
+				ImageSpec: coh.ImageSpec{
 					Image: stringPtr("Foo:1.0"),
 				},
 				ConfigDir: stringPtr("/cfg"),
@@ -313,12 +315,12 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- Coherence ----------------------------------------------------------
 
 		Context("Coherence is merged", func() {
-			var cohOne = coherence.CoherenceSpec{
+			var cohOne = coh.CoherenceSpec{
 				CacheConfig:    stringPtr("one.xml"),
 				StorageEnabled: boolPtr(true),
 			}
 
-			var cohTwo = coherence.CoherenceSpec{
+			var cohTwo = coh.CoherenceSpec{
 				OverrideConfig: stringPtr("override.xml"),
 			}
 
@@ -520,11 +522,11 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- JVM ----------------------------------------------------------------
 
 		Context("JVM is merged", func() {
-			var jvmOne = coherence.JVMSpec{
+			var jvmOne = coh.JVMSpec{
 				FlightRecorder: boolPtr(true),
 			}
 
-			var jvmTwo = coherence.JVMSpec{
+			var jvmTwo = coh.JVMSpec{
 				UseContainerLimits: boolPtr(true),
 			}
 
@@ -726,11 +728,11 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- Logging ------------------------------------------------------------
 
 		Context("Logging is merged", func() {
-			var logOne = coherence.LoggingSpec{
+			var logOne = coh.LoggingSpec{
 				ConfigMapName: stringPtr("cm-log"),
 			}
 
-			var logTwo = coherence.LoggingSpec{
+			var logTwo = coh.LoggingSpec{
 				ConfigFile: stringPtr("logging.properties"),
 			}
 
@@ -915,29 +917,29 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- Ports --------------------------------------------------------------
 
 		Context("Ports are merged", func() {
-			var portOne = coherence.NamedPortSpec{
+			var portOne = coh.NamedPortSpec{
 				Name:     "One",
-				PortSpec: coherence.PortSpec{Port: 100},
+				PortSpec: coh.PortSpec{Port: 100},
 			}
-			var portTwo = coherence.NamedPortSpec{
+			var portTwo = coh.NamedPortSpec{
 				Name:     "Two",
-				PortSpec: coherence.PortSpec{Port: 200},
+				PortSpec: coh.PortSpec{Port: 200},
 			}
-			var portTwoToo = coherence.NamedPortSpec{
+			var portTwoToo = coh.NamedPortSpec{
 				Name:     "Two",
-				PortSpec: coherence.PortSpec{Port: 222},
+				PortSpec: coh.PortSpec{Port: 222},
 			}
-			var portThree = coherence.NamedPortSpec{
+			var portThree = coh.NamedPortSpec{
 				Name:     "Three",
-				PortSpec: coherence.PortSpec{Port: 300},
+				PortSpec: coh.PortSpec{Port: 300},
 			}
-			var portFour = coherence.NamedPortSpec{
+			var portFour = coh.NamedPortSpec{
 				Name:     "Four",
-				PortSpec: coherence.PortSpec{Port: 400},
+				PortSpec: coh.PortSpec{Port: 400},
 			}
 
-			var portsOne = []coherence.NamedPortSpec{portOne, portTwo}
-			var portsTwo = []coherence.NamedPortSpec{portThree, portFour}
+			var portsOne = []coh.NamedPortSpec{portOne, portTwo}
+			var portsTwo = []coh.NamedPortSpec{portThree, portFour}
 
 			When("the original Ports is nil and default Ports is nil", func() {
 				BeforeEach(func() {
@@ -957,14 +959,14 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 			When("the original Ports is nil and default Ports is empty", func() {
 				BeforeEach(func() {
 					defaults = roleSpecTwo.DeepCopy()
-					defaults.Ports = []coherence.NamedPortSpec{}
+					defaults.Ports = []coh.NamedPortSpec{}
 					original = roleSpecOne.DeepCopy()
 					original.Ports = nil
 				})
 
 				It("clone should have empty Ports", func() {
 					expected := original.DeepCopy()
-					expected.Ports = []coherence.NamedPortSpec{}
+					expected.Ports = []coh.NamedPortSpec{}
 					Expect(clone).To(Equal(expected))
 				})
 			})
@@ -989,12 +991,12 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 					defaults = roleSpecTwo.DeepCopy()
 					defaults.Ports = nil
 					original = roleSpecOne.DeepCopy()
-					original.Ports = []coherence.NamedPortSpec{}
+					original.Ports = []coh.NamedPortSpec{}
 				})
 
 				It("clone should have empty Ports", func() {
 					expected := original.DeepCopy()
-					expected.Ports = []coherence.NamedPortSpec{}
+					expected.Ports = []coh.NamedPortSpec{}
 					Expect(clone).To(Equal(expected))
 				})
 			})
@@ -1002,14 +1004,14 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 			When("the original Ports is empty map and default Ports is empty", func() {
 				BeforeEach(func() {
 					defaults = roleSpecTwo.DeepCopy()
-					defaults.Ports = []coherence.NamedPortSpec{}
+					defaults.Ports = []coh.NamedPortSpec{}
 					original = roleSpecOne.DeepCopy()
-					original.Ports = []coherence.NamedPortSpec{}
+					original.Ports = []coh.NamedPortSpec{}
 				})
 
 				It("clone should have empty Ports", func() {
 					expected := original.DeepCopy()
-					expected.Ports = []coherence.NamedPortSpec{}
+					expected.Ports = []coh.NamedPortSpec{}
 					Expect(clone).To(Equal(expected))
 				})
 			})
@@ -1019,7 +1021,7 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 					defaults = roleSpecTwo.DeepCopy()
 					defaults.Ports = portsOne
 					original = roleSpecOne.DeepCopy()
-					original.Ports = []coherence.NamedPortSpec{}
+					original.Ports = []coh.NamedPortSpec{}
 				})
 
 				It("clone should have default Ports", func() {
@@ -1045,7 +1047,7 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 			When("the original Ports is set and default Ports is empty", func() {
 				BeforeEach(func() {
 					defaults = roleSpecTwo.DeepCopy()
-					defaults.Ports = []coherence.NamedPortSpec{}
+					defaults.Ports = []coh.NamedPortSpec{}
 					original = roleSpecOne.DeepCopy()
 					original.Ports = portsTwo
 				})
@@ -1065,7 +1067,7 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 
 				It("clone should have merged Ports", func() {
 					expected := original.DeepCopy()
-					expected.Ports = []coherence.NamedPortSpec{portThree, portFour, portOne, portTwo}
+					expected.Ports = []coh.NamedPortSpec{portThree, portFour, portOne, portTwo}
 					Expect(clone).To(Equal(expected))
 				})
 			})
@@ -1075,12 +1077,12 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 					defaults = roleSpecTwo.DeepCopy()
 					defaults.Ports = portsOne
 					original = roleSpecOne.DeepCopy()
-					original.Ports = []coherence.NamedPortSpec{portTwoToo, portFour}
+					original.Ports = []coh.NamedPortSpec{portTwoToo, portFour}
 				})
 
 				It("clone should have merged Ports with the original key taking precedence", func() {
 					expected := original.DeepCopy()
-					expected.Ports = []coherence.NamedPortSpec{portTwoToo, portFour, portOne}
+					expected.Ports = []coh.NamedPortSpec{portTwoToo, portFour, portOne}
 					Expect(clone).To(Equal(expected))
 				})
 			})
@@ -1089,11 +1091,11 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 		// ----- ReadinessProbe -----------------------------------------------------
 
 		Context("ReadinessProbe is merged", func() {
-			var readyOne = coherence.ReadinessProbeSpec{
+			var readyOne = coh.ReadinessProbeSpec{
 				InitialDelaySeconds: int32Ptr(10),
 			}
 
-			var readyTwo = coherence.ReadinessProbeSpec{
+			var readyTwo = coh.ReadinessProbeSpec{
 				TimeoutSeconds: int32Ptr(99),
 			}
 
@@ -1873,11 +1875,11 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 	// ----- Methods ------------------------------------------------------------
 
 	Context("Getting Replica count", func() {
-		var role coherence.CoherenceRoleSpec
+		var role coh.CoherenceRoleSpec
 		var replicas *int32
 
 		JustBeforeEach(func() {
-			role = coherence.CoherenceRoleSpec{Replicas: replicas}
+			role = coh.CoherenceRoleSpec{Replicas: replicas}
 		})
 
 		When("Replicas is not set", func() {
@@ -1886,7 +1888,7 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 			})
 
 			It("should return the default replica count", func() {
-				Expect(role.GetReplicas()).To(Equal(coherence.DefaultReplicas))
+				Expect(role.GetReplicas()).To(Equal(coh.DefaultReplicas))
 			})
 		})
 
@@ -1902,17 +1904,17 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 	})
 
 	When("Getting the full role name", func() {
-		var cluster coherence.CoherenceCluster
-		var role coherence.CoherenceRoleSpec
+		var cluster coh.CoherenceCluster
+		var role coh.CoherenceRoleSpec
 
 		BeforeEach(func() {
-			cluster = coherence.CoherenceCluster{
+			cluster = coh.CoherenceCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
 			}
 
-			role = coherence.CoherenceRoleSpec{
+			role = coh.CoherenceRoleSpec{
 				Role: "storage",
 			}
 		})
@@ -1923,7 +1925,7 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 	})
 
 	Context("Getting the role name", func() {
-		var role *coherence.CoherenceRoleSpec
+		var role *coh.CoherenceRoleSpec
 		var name string
 
 		JustBeforeEach(func() {
@@ -1932,17 +1934,17 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 
 		When("role is not set", func() {
 			BeforeEach(func() {
-				role = &coherence.CoherenceRoleSpec{Role: ""}
+				role = &coh.CoherenceRoleSpec{Role: ""}
 			})
 
 			It("should use the default name", func() {
-				Expect(name).To(Equal(coherence.DefaultRoleName))
+				Expect(name).To(Equal(coh.DefaultRoleName))
 			})
 		})
 
 		When("role is set", func() {
 			BeforeEach(func() {
-				role = &coherence.CoherenceRoleSpec{Role: "test-role"}
+				role = &coh.CoherenceRoleSpec{Role: "test-role"}
 			})
 
 			It("should use the default name", func() {
@@ -1956,10 +1958,56 @@ var _ = Describe("Testing CoherenceRoleSpec struct", func() {
 			})
 
 			It("should use the default name", func() {
-				Expect(name).To(Equal(coherence.DefaultRoleName))
+				Expect(name).To(Equal(coh.DefaultRoleName))
 			})
 		})
 
 	})
-
 })
+
+func envVarsToMap(c *corev1.Container) map[string]corev1.EnvVar {
+	var m = make(map[string]corev1.EnvVar)
+	for _, e := range c.Env {
+		m[e.Name] = e
+	}
+	return m
+}
+
+func TestCoherenceRoleSpec_CreateHeadlessService(t *testing.T) {
+	g := NewGomegaWithT(t)
+	c := coh.CoherenceCluster{}
+	c.Name = "test-cluster"
+	r := coh.CoherenceRoleSpec{}
+	r.Role = "storage"
+
+	labels := r.CreateCommonLabels(&c)
+	labels[coh.LabelComponent] = coh.LabelComponentCoherenceHeadless
+
+	selector := r.CreateCommonLabels(&c)
+	selector[coh.LabelComponent] = coh.LabelComponentCoherencePod
+
+	expected := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   r.GetFullRoleName(&c),
+			Labels: labels,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP:                "None",
+			Selector:                 selector,
+			PublishNotReadyAddresses: true,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       coh.PortNameCoherence,
+					Protocol:   corev1.ProtocolTCP,
+					Port:       7,
+					TargetPort: intstr.FromInt(7),
+				},
+			},
+		},
+	}
+
+	svc := r.CreateHeadlessService(&c)
+
+	g.Expect(svc).NotTo(BeNil())
+	g.Expect(deep.Equal(*svc, expected)).To(BeNil())
+}

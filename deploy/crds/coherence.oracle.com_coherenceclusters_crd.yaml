@@ -4992,7 +4992,7 @@ spec:
                       items:
                         type: string
                       type: array
-                    enabled:
+                    collector:
                       description: The name of the JVM garbage collector to use. G1
                         - adds the -XX:+UseG1GC option CMS - adds the -XX:+UseConcMarkSweepGC
                         option Parallel - adds the -XX:+UseParallelGC Default - use
@@ -5327,9 +5327,28 @@ spec:
                 description: '----- NamedPortSpec struct ----------------------------------------------------
                   NamedPortSpec defines a named port for a Coherence component'
                 properties:
+                  hostIP:
+                    description: What host IP to bind the external port to.
+                    type: string
+                  hostPort:
+                    description: Number of port to expose on the host. If specified,
+                      this must be a valid port number, 0 < x < 65536. If HostNetwork
+                      is specified, this must match ContainerPort. Most containers
+                      do not need this.
+                    format: int32
+                    type: integer
                   name:
                     description: Name specifies the name of th port.
                     type: string
+                  nodePort:
+                    description: 'The port on each node on which this service is exposed
+                      when type=NodePort or LoadBalancer. Usually assigned by the
+                      system. If specified, it will be allocated to the service if
+                      unused or else creation of the service will fail. Default is
+                      to auto-allocate a port if the ServiceType of this Service requires
+                      one. More info: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport'
+                    format: int32
+                    type: integer
                   port:
                     description: Port specifies the port used.
                     format: int32
@@ -5348,10 +5367,32 @@ spec:
                         description: Annotations is free form yaml that will be added
                           to the service annotations
                         type: object
+                      clusterIP:
+                        description: 'clusterIP is the IP address of the service and
+                          is usually assigned randomly by the master. If an address
+                          is specified manually and is not in use by others, it will
+                          be allocated to the service; otherwise, creation of the
+                          service will fail. This field can not be changed through
+                          updates. Valid values are "None", empty string (""), or
+                          a valid IP address. "None" can be specified for headless
+                          services when proxying is not required. Only applies to
+                          types ClusterIP, NodePort, and LoadBalancer. Ignored if
+                          type is ExternalName. More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies'
+                        type: string
                       enabled:
                         description: Enabled controls whether to create the service
                           yaml or not
                         type: boolean
+                      externalIPs:
+                        description: externalIPs is a list of IP addresses for which
+                          nodes in the cluster will also accept traffic for this service.  These
+                          IPs are not managed by Kubernetes.  The user is responsible
+                          for ensuring that traffic arrives at a node with this IP.  A
+                          common example is external load-balancers that are not part
+                          of the Kubernetes system.
+                        items:
+                          type: string
+                        type: array
                       externalName:
                         description: externalName is the external reference that kubedns
                           or equivalent will return as a CNAME record for this service.
@@ -5377,6 +5418,20 @@ spec:
                           and ExternalTrafficPolicy is set to Local.
                         format: int32
                         type: integer
+                      ipFamily:
+                        description: ipFamily specifies whether this Service has a
+                          preference for a particular IP family (e.g. IPv4 vs. IPv6).  If
+                          a specific IP family is requested, the clusterIP field will
+                          be allocated from that family, if it is available in the
+                          cluster.  If no IP family is requested, the cluster's primary
+                          IP family will be used. Other IP fields (loadBalancerIP,
+                          loadBalancerSourceRanges, externalIPs) and controllers which
+                          allocate external load-balancers should use the same IP
+                          family.  Endpoints for this Service will be of this family.  This
+                          field is immutable after creation. Assigning a ServiceIPFamily
+                          not available in the cluster (e.g. IPv6 in IPv4 only cluster)
+                          is an error condition and will fail during clusterIP assignment.
+                        type: string
                       labels:
                         additionalProperties:
                           type: string
@@ -10847,7 +10902,7 @@ spec:
                             items:
                               type: string
                             type: array
-                          enabled:
+                          collector:
                             description: The name of the JVM garbage collector to
                               use. G1 - adds the -XX:+UseG1GC option CMS - adds the
                               -XX:+UseConcMarkSweepGC option Parallel - adds the -XX:+UseParallelGC
@@ -11191,9 +11246,28 @@ spec:
                       description: '----- NamedPortSpec struct ----------------------------------------------------
                         NamedPortSpec defines a named port for a Coherence component'
                       properties:
+                        hostIP:
+                          description: What host IP to bind the external port to.
+                          type: string
+                        hostPort:
+                          description: Number of port to expose on the host. If specified,
+                            this must be a valid port number, 0 < x < 65536. If HostNetwork
+                            is specified, this must match ContainerPort. Most containers
+                            do not need this.
+                          format: int32
+                          type: integer
                         name:
                           description: Name specifies the name of th port.
                           type: string
+                        nodePort:
+                          description: 'The port on each node on which this service
+                            is exposed when type=NodePort or LoadBalancer. Usually
+                            assigned by the system. If specified, it will be allocated
+                            to the service if unused or else creation of the service
+                            will fail. Default is to auto-allocate a port if the ServiceType
+                            of this Service requires one. More info: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport'
+                          format: int32
+                          type: integer
                         port:
                           description: Port specifies the port used.
                           format: int32
@@ -11212,10 +11286,34 @@ spec:
                               description: Annotations is free form yaml that will
                                 be added to the service annotations
                               type: object
+                            clusterIP:
+                              description: 'clusterIP is the IP address of the service
+                                and is usually assigned randomly by the master. If
+                                an address is specified manually and is not in use
+                                by others, it will be allocated to the service; otherwise,
+                                creation of the service will fail. This field can
+                                not be changed through updates. Valid values are "None",
+                                empty string (""), or a valid IP address. "None" can
+                                be specified for headless services when proxying is
+                                not required. Only applies to types ClusterIP, NodePort,
+                                and LoadBalancer. Ignored if type is ExternalName.
+                                More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies'
+                              type: string
                             enabled:
                               description: Enabled controls whether to create the
                                 service yaml or not
                               type: boolean
+                            externalIPs:
+                              description: externalIPs is a list of IP addresses for
+                                which nodes in the cluster will also accept traffic
+                                for this service.  These IPs are not managed by Kubernetes.  The
+                                user is responsible for ensuring that traffic arrives
+                                at a node with this IP.  A common example is external
+                                load-balancers that are not part of the Kubernetes
+                                system.
+                              items:
+                                type: string
+                              type: array
                             externalName:
                               description: externalName is the external reference
                                 that kubedns or equivalent will return as a CNAME
@@ -11243,6 +11341,22 @@ spec:
                                 to Local.
                               format: int32
                               type: integer
+                            ipFamily:
+                              description: ipFamily specifies whether this Service
+                                has a preference for a particular IP family (e.g.
+                                IPv4 vs. IPv6).  If a specific IP family is requested,
+                                the clusterIP field will be allocated from that family,
+                                if it is available in the cluster.  If no IP family
+                                is requested, the cluster's primary IP family will
+                                be used. Other IP fields (loadBalancerIP, loadBalancerSourceRanges,
+                                externalIPs) and controllers which allocate external
+                                load-balancers should use the same IP family.  Endpoints
+                                for this Service will be of this family.  This field
+                                is immutable after creation. Assigning a ServiceIPFamily
+                                not available in the cluster (e.g. IPv6 in IPv4 only
+                                cluster) is an error condition and will fail during
+                                clusterIP assignment.
+                              type: string
                             labels:
                               additionalProperties:
                                 type: string

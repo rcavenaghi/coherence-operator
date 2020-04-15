@@ -9,25 +9,26 @@ package v1_test
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	coherence "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
 	corev1 "k8s.io/api/core/v1"
+	"testing"
 )
 
 var _ = Describe("Testing ApplicationSpec struct", func() {
 
 	Context("Copying an ApplicationSpec using DeepCopyWithDefaults", func() {
-		var original *coherence.ApplicationSpec
-		var defaults *coherence.ApplicationSpec
-		var clone *coherence.ApplicationSpec
+		var original *coh.ApplicationSpec
+		var defaults *coh.ApplicationSpec
+		var clone *coh.ApplicationSpec
 
 		var always = corev1.PullAlways
 		var never = corev1.PullNever
 
-		var appOne = &coherence.ApplicationSpec{
+		var appOne = &coh.ApplicationSpec{
 			Type: stringPtr("java"),
 			Main: stringPtr("TestMainOne"),
 			Args: []string{},
-			ImageSpec: coherence.ImageSpec{
+			ImageSpec: coh.ImageSpec{
 				Image:           stringPtr("app:1.0"),
 				ImagePullPolicy: &always,
 			},
@@ -35,11 +36,11 @@ var _ = Describe("Testing ApplicationSpec struct", func() {
 			ConfigDir: stringPtr("/test/confOne"),
 		}
 
-		var appTwo = &coherence.ApplicationSpec{
+		var appTwo = &coh.ApplicationSpec{
 			Type: stringPtr("node"),
 			Main: stringPtr("TestMainTwo"),
 			Args: []string{},
-			ImageSpec: coherence.ImageSpec{
+			ImageSpec: coh.ImageSpec{
 				Image:           stringPtr("app:2.0"),
 				ImagePullPolicy: &never,
 			},
@@ -96,7 +97,7 @@ var _ = Describe("Testing ApplicationSpec struct", func() {
 		When("defaults is empty", func() {
 			BeforeEach(func() {
 				original = appOne
-				defaults = &coherence.ApplicationSpec{}
+				defaults = &coh.ApplicationSpec{}
 			})
 
 			It("should copy the original Args", func() {
@@ -157,7 +158,7 @@ var _ = Describe("Testing ApplicationSpec struct", func() {
 
 		When("original is empty", func() {
 			BeforeEach(func() {
-				original = &coherence.ApplicationSpec{}
+				original = &coh.ApplicationSpec{}
 				defaults = appTwo
 			})
 
@@ -257,3 +258,194 @@ var _ = Describe("Testing ApplicationSpec struct", func() {
 		})
 	})
 })
+
+func TestApplicationSpec_CreateApplicationContainer_NilApplication(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	var app coh.ApplicationSpec
+	ok, _ := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeFalse())
+}
+
+func TestApplicationSpec_CreateApplicationContainer_NoImage(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image: nil,
+		},
+	}
+
+	ok, _ := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeFalse())
+}
+
+func TestApplicationSpec_CreateApplicationContainer_Default(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image: stringPtr("my-test-image:1.0"),
+		},
+	}
+
+	ok, c := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(c.Name).To(Equal(coh.ContainerNameApplication))
+	g.Expect(c.Image).To(Equal("my-test-image:1.0"))
+	g.Expect(c.Command).To(Equal([]string{coh.DefaultCommandApplication}))
+	g.Expect(c.ImagePullPolicy).To(BeEmpty())
+
+	env := []corev1.EnvVar{
+		{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+		{Name: "APP_DIR", Value: coh.AppDir},
+		{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+		{Name: "LIB_DIR", Value: coh.LibDir},
+		{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+		{Name: "CONF_DIR", Value: coh.ConfDir},
+	}
+	g.Expect(c.Env).To(Equal(env))
+
+	mounts := []corev1.VolumeMount{
+		{Name: coh.VolumeNameUtils, MountPath: coh.VolumeMountPathUtils},
+		{Name: coh.VolumeNameApplication, MountPath: coh.ExternalAppDir},
+	}
+	g.Expect(c.VolumeMounts).To(Equal(mounts))
+}
+
+func TestApplicationSpec_CreateApplicationContainer_WithPullPolicy(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	pullPolicy := corev1.PullAlways
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image:           stringPtr("my-test-image:1.0"),
+			ImagePullPolicy: &pullPolicy,
+		},
+	}
+
+	ok, c := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(c.Name).To(Equal(coh.ContainerNameApplication))
+	g.Expect(c.Image).To(Equal("my-test-image:1.0"))
+	g.Expect(c.Command).To(Equal([]string{coh.DefaultCommandApplication}))
+	g.Expect(c.ImagePullPolicy).To(Equal(pullPolicy))
+
+	env := []corev1.EnvVar{
+		{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+		{Name: "APP_DIR", Value: coh.AppDir},
+		{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+		{Name: "LIB_DIR", Value: coh.LibDir},
+		{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+		{Name: "CONF_DIR", Value: coh.ConfDir},
+	}
+	g.Expect(c.Env).To(Equal(env))
+
+	mounts := []corev1.VolumeMount{
+		{Name: coh.VolumeNameUtils, MountPath: coh.VolumeMountPathUtils},
+		{Name: coh.VolumeNameApplication, MountPath: coh.ExternalAppDir},
+	}
+	g.Expect(c.VolumeMounts).To(Equal(mounts))
+}
+
+func TestApplicationSpec_CreateApplicationContainer_WithAppDir(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image: stringPtr("my-test-image:1.0"),
+		},
+		AppDir: stringPtr("/home/test/app"),
+	}
+
+	ok, c := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(c.Name).To(Equal(coh.ContainerNameApplication))
+	g.Expect(c.Image).To(Equal("my-test-image:1.0"))
+	g.Expect(c.Command).To(Equal([]string{coh.DefaultCommandApplication}))
+	g.Expect(c.ImagePullPolicy).To(BeEmpty())
+
+	env := []corev1.EnvVar{
+		{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+		{Name: "APP_DIR", Value: "/home/test/app"},
+		{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+		{Name: "LIB_DIR", Value: coh.LibDir},
+		{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+		{Name: "CONF_DIR", Value: coh.ConfDir},
+	}
+	g.Expect(c.Env).To(Equal(env))
+
+	mounts := []corev1.VolumeMount{
+		{Name: coh.VolumeNameUtils, MountPath: coh.VolumeMountPathUtils},
+		{Name: coh.VolumeNameApplication, MountPath: coh.ExternalAppDir},
+	}
+	g.Expect(c.VolumeMounts).To(Equal(mounts))
+}
+
+func TestApplicationSpec_CreateApplicationContainer_WithLibDir(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image: stringPtr("my-test-image:1.0"),
+		},
+		LibDir: stringPtr("/home/test/lib"),
+	}
+
+	ok, c := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(c.Name).To(Equal(coh.ContainerNameApplication))
+	g.Expect(c.Image).To(Equal("my-test-image:1.0"))
+	g.Expect(c.Command).To(Equal([]string{coh.DefaultCommandApplication}))
+	g.Expect(c.ImagePullPolicy).To(BeEmpty())
+
+	env := []corev1.EnvVar{
+		{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+		{Name: "APP_DIR", Value: coh.AppDir},
+		{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+		{Name: "LIB_DIR", Value: "/home/test/lib"},
+		{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+		{Name: "CONF_DIR", Value: coh.ConfDir},
+	}
+	g.Expect(c.Env).To(Equal(env))
+
+	mounts := []corev1.VolumeMount{
+		{Name: coh.VolumeNameUtils, MountPath: coh.VolumeMountPathUtils},
+		{Name: coh.VolumeNameApplication, MountPath: coh.ExternalAppDir},
+	}
+	g.Expect(c.VolumeMounts).To(Equal(mounts))
+}
+
+func TestApplicationSpec_CreateApplicationContainer_WithConfDir(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	app := coh.ApplicationSpec{
+		ImageSpec: coh.ImageSpec{
+			Image: stringPtr("my-test-image:1.0"),
+		},
+		ConfigDir: stringPtr("/home/test/conf"),
+	}
+
+	ok, c := app.CreateApplicationContainer()
+	g.Expect(ok).To(BeTrue())
+	g.Expect(c.Name).To(Equal(coh.ContainerNameApplication))
+	g.Expect(c.Image).To(Equal("my-test-image:1.0"))
+	g.Expect(c.Command).To(Equal([]string{coh.DefaultCommandApplication}))
+	g.Expect(c.ImagePullPolicy).To(BeEmpty())
+
+	env := []corev1.EnvVar{
+		{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+		{Name: "APP_DIR", Value: coh.AppDir},
+		{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+		{Name: "LIB_DIR", Value: coh.LibDir},
+		{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+		{Name: "CONF_DIR", Value: "/home/test/conf"},
+	}
+	g.Expect(c.Env).To(Equal(env))
+
+	mounts := []corev1.VolumeMount{
+		{Name: coh.VolumeNameUtils, MountPath: coh.VolumeMountPathUtils},
+		{Name: coh.VolumeNameApplication, MountPath: coh.ExternalAppDir},
+	}
+	g.Expect(c.VolumeMounts).To(Equal(mounts))
+}

@@ -7,15 +7,29 @@
 package v1_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ghodss/yaml"
-	v1 "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	"github.com/go-test/deep"
+	. "github.com/onsi/gomega"
+	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
+	"github.com/oracle/coherence-operator/pkg/controller/coherencecluster"
+	"github.com/oracle/coherence-operator/pkg/controller/coherencerole"
+	stubs "github.com/oracle/coherence-operator/pkg/fakes"
+	"github.com/oracle/coherence-operator/pkg/flags"
+	"github.com/oracle/coherence-operator/test/e2e/helper"
 	"io/ioutil"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
+	"testing"
 )
 
 // Returns a pointer to an int32
@@ -33,16 +47,16 @@ func stringPtr(x string) *string {
 	return &x
 }
 
-func LoadCoherenceRoleFromCoherenceClusterYamlFile(file string) v1.CoherenceRoleSpec {
+func LoadCoherenceRoleFromCoherenceClusterYamlFile(file string) coh.CoherenceRoleSpec {
 	cluster, err := LoadCoherenceClusterFromYamlFile(file)
 	if err != nil {
 		fmt.Println(err)
-		return v1.CoherenceRoleSpec{}
+		return coh.CoherenceRoleSpec{}
 	}
 	return cluster.Spec.CoherenceRoleSpec
 }
 
-func LoadCoherenceClusterFromYamlFile(file string) (*v1.CoherenceCluster, error) {
+func LoadCoherenceClusterFromYamlFile(file string) (*coh.CoherenceCluster, error) {
 	if file == "" {
 		return nil, errors.New("missing file name")
 	}
@@ -60,7 +74,7 @@ func LoadCoherenceClusterFromYamlFile(file string) (*v1.CoherenceCluster, error)
 	// expand any ${env-var} references in the yaml file
 	s := os.ExpandEnv(string(data))
 
-	cluster := &v1.CoherenceCluster{}
+	cluster := &coh.CoherenceCluster{}
 	err = yaml.Unmarshal([]byte(s), cluster)
 	if err != nil {
 		return nil, errors.New("Failed to parse yaml file " + actualFile + " caused by " + err.Error())
@@ -98,4 +112,575 @@ func findActualFile(file string) (string, error) {
 	}
 
 	return "", err
+}
+
+func assertEnvironmentVariables(t *testing.T, stsActual, stsExpected *appsv1.StatefulSet) {
+	g := NewGomegaWithT(t)
+
+	for _, contExpected := range stsExpected.Spec.Template.Spec.InitContainers {
+		contActual := coh.FindInitContainer(contExpected.Name, stsActual)
+		g.Expect(contActual).NotTo(BeNil(), "Error asserting environment variables, could not find init-container with name "+contExpected.Name)
+		assertEnvironmentVariablesForContainer(t, contActual, &contExpected)
+	}
+
+	for _, contExpected := range stsExpected.Spec.Template.Spec.Containers {
+		contActual := coh.FindContainer(contExpected.Name, stsActual)
+		g.Expect(contActual).NotTo(BeNil(), "Error asserting environment variables, could not find container with name "+contExpected.Name)
+		assertEnvironmentVariablesForContainer(t, contActual, &contExpected)
+	}
+}
+
+func assertEnvironmentVariablesForContainer(t *testing.T, c, cExpected *corev1.Container) {
+	g := NewGomegaWithT(t)
+
+	env := envVarsToMap(c)
+	envExpected := envVarsToMap(cExpected)
+
+	equal := deep.Equal(env, envExpected)
+	g.Expect(equal).To(BeNil(), fmt.Sprintf("Environment variable mis-match for container '%s'", cExpected.Name))
+}
+
+func assertStatefulSet(t *testing.T, stsActual, stsExpected *appsv1.StatefulSet) {
+	g := NewGomegaWithT(t)
+
+	dir, err := helper.EnsureLogsDir(t.Name())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// sort env vars before diff
+	sortEnvVars(stsActual)
+	sortEnvVars(stsExpected)
+
+	// sort volume mounts before diff
+	sortVolumeMounts(stsActual)
+	sortVolumeMounts(stsExpected)
+
+	// sort volumes before diff
+	sortVolumes(stsActual)
+	sortVolumes(stsExpected)
+
+	// sort ports before diff
+	sortPorts(stsActual)
+	sortPorts(stsExpected)
+
+	// Dump the json for the actual StatefulSet for debugging failures
+	jsonActual, err := json.MarshalIndent(stsActual, "", "    ")
+	g.Expect(err).NotTo(HaveOccurred())
+	err = ioutil.WriteFile(fmt.Sprintf("%s%c%s-Actual.json", dir, os.PathSeparator, stsActual.Name), jsonActual, os.ModePerm)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Dump the json for the expected StatefulSet for debugging failures
+	jsonExpected, err := json.MarshalIndent(stsExpected, "", "    ")
+	g.Expect(err).NotTo(HaveOccurred())
+	err = ioutil.WriteFile(fmt.Sprintf("%s%c%s-Expected.json", dir, os.PathSeparator, stsActual.Name), jsonExpected, os.ModePerm)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	assertEnvironmentVariables(t, stsActual, stsExpected)
+	assertEnvironmentVariables(t, stsActual, stsExpected)
+
+	diffs := deep.Equal(*stsActual, *stsExpected)
+	msg := "StatefulSets not equal:"
+	if diffs != nil && len(diffs) > 0 {
+		// Dump the diffs
+		err = ioutil.WriteFile(fmt.Sprintf("%s%c%s-Diff.txt", dir, os.PathSeparator, stsActual.Name), []byte(strings.Join(diffs, "\n")), os.ModePerm)
+		g.Expect(err).NotTo(HaveOccurred())
+		for _, diff := range diffs {
+			msg = msg + "\n" + diff
+		}
+		t.Errorf(msg)
+	}
+}
+
+// Create the expected default StatefulSet for a role with nothing but the minimal fields set.
+func createMinimalExpectedStatefulSet(cluster *coh.CoherenceCluster, role coh.CoherenceRoleSpec) *appsv1.StatefulSet {
+	ensureRoleSpecHasImages(&role)
+
+	labels := role.CreateCommonLabels(cluster)
+	labels[coh.LabelComponent] = coh.LabelComponentCoherenceStatefulSet
+	selector := role.CreateCommonLabels(cluster)
+	selector[coh.LabelComponent] = coh.LabelComponentCoherencePod
+	podLabels := role.CreateCommonLabels(cluster)
+	podLabels[coh.LabelComponent] = coh.LabelComponentCoherencePod
+	podLabels[coh.LabelCoherenceWKAMember] = "true"
+
+	emptyVolume := corev1.VolumeSource{
+		EmptyDir: &corev1.EmptyDirVolumeSource{},
+	}
+
+	// The Coherence Container
+	cohContainer := corev1.Container{
+		Name:    coh.ContainerNameCoherence,
+		Command: []string{"/bin/sh", "-x", "/scripts/startCoherence.sh", "server"},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "coherence",
+				ContainerPort: 7,
+				Protocol:      "TCP",
+			},
+			{
+				Name:          "health",
+				ContainerPort: role.GetHealthPort(),
+				Protocol:      "TCP",
+			},
+		},
+		Resources:      role.CreateDefaultResources(),
+		ReadinessProbe: role.UpdateDefaultReadinessProbeAction(role.CreateDefaultReadinessProbe()),
+		LivenessProbe:  role.UpdateDefaultLivenessProbeAction(role.CreateDefaultLivenessProbe()),
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      coh.VolumeNameApplication,
+				MountPath: coh.ExternalAppDir,
+				ReadOnly:  false,
+			},
+			{
+				Name:      coh.VolumeNameScripts,
+				MountPath: coh.VolumeMountPathScripts,
+				ReadOnly:  false,
+			},
+			{
+				Name:      coh.VolumeNameJVM,
+				MountPath: coh.VolumeMountPathJVM,
+				ReadOnly:  false,
+			},
+			{
+				Name:      coh.VolumeNameLogs,
+				MountPath: coh.VolumeMountPathLogs,
+				ReadOnly:  false,
+			},
+			{
+				Name:      coh.VolumeNameUtils,
+				MountPath: coh.VolumeMountPathUtils,
+				ReadOnly:  false,
+			},
+		},
+		Env: []corev1.EnvVar{
+			{
+				Name:  "COH_APP_DIR",
+				Value: coh.ExternalAppDir,
+			},
+			{
+				Name:  "COH_CLUSTER_NAME",
+				Value: cluster.Name,
+			},
+			{
+				Name:  "COH_EXTRA_CLASSPATH",
+				Value: coh.ExternalLibDir + "/*:" + coh.ExternalConfDir,
+			},
+			{
+				Name:  "COH_HEALTH_PORT",
+				Value: fmt.Sprintf("%d", role.GetHealthPort()),
+			},
+			{
+				Name:  "COH_LOGGING_CONFIG",
+				Value: "/scripts/logging.properties",
+			},
+			{
+				Name: "COH_MACHINE_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "spec.nodeName",
+					},
+				},
+			},
+			{
+				Name: "COH_MEMBER_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			},
+			{
+				Name:  "COH_METRICS_ENABLED",
+				Value: "false",
+			},
+			{
+				Name:  "COH_MGMT_ENABLED",
+				Value: "false",
+			},
+			{
+				Name: "COH_POD_UID",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.uid",
+					},
+				},
+			},
+			{
+				Name:  "COH_RACK_INFO_LOCATION",
+				Value: "http://$(OPERATOR_HOST)/rack/$(COH_MACHINE_NAME)",
+			},
+			{
+				Name:  "COH_ROLE",
+				Value: role.GetRoleName(),
+			},
+			{
+				Name:  "COH_SITE_INFO_LOCATION",
+				Value: "http://$(OPERATOR_HOST)/site/$(COH_MACHINE_NAME)",
+			},
+			{
+				Name:  "COH_UTIL_DIR",
+				Value: coh.VolumeMountPathUtils,
+			},
+			{
+				Name:  "COH_WKA",
+				Value: cluster.GetWkaServiceName(),
+			},
+			{
+				Name:  "JVM_FLIGHT_RECORDER",
+				Value: "true",
+			},
+			{
+				Name:  "JVM_GC_LOGGING",
+				Value: "true",
+			},
+			{
+				Name:  "JVM_USE_CONTAINER_LIMITS",
+				Value: "true",
+			},
+			{
+				Name: "OPERATOR_HOST",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: coh.ConfigMapNameOperatorConfig},
+						Key:                  coh.OperatorConfigKeyHost,
+						Optional:             pointer.BoolPtr(true),
+					},
+				},
+			},
+			{
+				Name:  "OPERATOR_REQUEST_TIMEOUT",
+				Value: "120",
+			},
+		},
+	}
+
+	if cohImage := role.GetCoherenceImage(); cohImage != nil {
+		cohContainer.Image = *cohImage
+	}
+
+	// The Utils Init-Container
+	utilsContainer := corev1.Container{
+		Name:    coh.ContainerNameUtils,
+		Command: []string{"/files/utils-init"},
+		Env: []corev1.EnvVar{
+			{
+				Name:  "COH_CLUSTER_NAME",
+				Value: cluster.Name,
+			},
+			{
+				Name:  "COH_UTIL_DIR",
+				Value: coh.VolumeMountPathUtils,
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      coh.VolumeNameUtils,
+				ReadOnly:  false,
+				MountPath: coh.VolumeMountPathUtils,
+			},
+		},
+	}
+
+	if utilsImage := role.GetCoherenceUtilsImage(); utilsImage != nil {
+		utilsContainer.Image = *utilsImage
+	}
+
+	// The StatefulSet
+	sts := appsv1.StatefulSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StatefulSet",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   role.GetFullRoleName(cluster),
+			Labels: labels,
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: pointer.Int32Ptr(role.GetReplicas()),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: selector,
+			},
+			ServiceName:          role.GetFullRoleName(cluster),
+			RevisionHistoryLimit: pointer.Int32Ptr(5),
+			UpdateStrategy:       appsv1.StatefulSetUpdateStrategy{Type: appsv1.RollingUpdateStatefulSetStrategyType},
+			PodManagementPolicy:  appsv1.ParallelPodManagement,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: podLabels,
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{utilsContainer},
+					Containers:     []corev1.Container{cohContainer},
+					Volumes: []corev1.Volume{
+						{
+							Name:         coh.VolumeNameApplication,
+							VolumeSource: emptyVolume,
+						},
+						{
+							Name: coh.VolumeNameScripts,
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: coh.ConfigMapNameScripts,
+									},
+									DefaultMode: pointer.Int32Ptr(511),
+								},
+							},
+						},
+						{
+							Name:         coh.VolumeNameJVM,
+							VolumeSource: emptyVolume,
+						},
+						{
+							Name:         coh.VolumeNameLogs,
+							VolumeSource: emptyVolume,
+						},
+						{
+							Name:         coh.VolumeNameUtils,
+							VolumeSource: emptyVolume,
+						},
+					},
+					Affinity: role.CreateDefaultPodAffinity(cluster),
+				},
+			},
+		},
+		Status: appsv1.StatefulSetStatus{
+			Replicas: 0,
+		},
+	}
+	return &sts
+}
+
+// Create the default test application container
+func createDefaultApplicationContainer(image string) corev1.Container {
+	return corev1.Container{
+		Name:    coh.ContainerNameApplication,
+		Image:   image,
+		Command: []string{coh.DefaultCommandApplication},
+		Env: []corev1.EnvVar{
+			{Name: "EXTERNAL_APP_DIR", Value: coh.ExternalAppDir},
+			{Name: "APP_DIR", Value: coh.AppDir},
+			{Name: "EXTERNAL_LIB_DIR", Value: coh.ExternalLibDir},
+			{Name: "LIB_DIR", Value: coh.LibDir},
+			{Name: "EXTERNAL_CONF_DIR", Value: coh.ExternalConfDir},
+			{Name: "CONF_DIR", Value: coh.ConfDir},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      coh.VolumeNameUtils,
+				MountPath: coh.VolumeMountPathUtils,
+			},
+			{
+				Name:      coh.VolumeNameApplication,
+				MountPath: coh.ExternalAppDir,
+			},
+		},
+	}
+}
+
+func ensureRoleSpecHasImages(role *coh.CoherenceRoleSpec) {
+	cohSpec := role.Coherence
+	if cohSpec == nil {
+		cohSpec = &coh.CoherenceSpec{}
+	}
+	if cohSpec.Image == nil {
+		cohSpec.Image = pointer.StringPtr("oracle/coherence-ce:1.2.3")
+	}
+	role.Coherence = cohSpec
+
+	utilsSpec := role.CoherenceUtils
+	if utilsSpec == nil {
+		utilsSpec = &coh.ImageSpec{}
+	}
+	if utilsSpec.Image == nil {
+		utilsSpec.Image = pointer.StringPtr("oracle/operator:1.2.3-utils")
+	}
+	role.CoherenceUtils = utilsSpec
+}
+
+func sortEnvVars(sts *appsv1.StatefulSet) {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		sort.SliceStable(c.Env, func(i, j int) bool {
+			return c.Env[i].Name < c.Env[j].Name
+		})
+	}
+	for _, c := range sts.Spec.Template.Spec.Containers {
+		sort.SliceStable(c.Env, func(i, j int) bool {
+			return c.Env[i].Name < c.Env[j].Name
+		})
+	}
+}
+
+func sortVolumeMounts(sts *appsv1.StatefulSet) {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		sort.SliceStable(c.VolumeMounts, func(i, j int) bool {
+			return c.VolumeMounts[i].Name < c.VolumeMounts[j].Name
+		})
+	}
+	for _, c := range sts.Spec.Template.Spec.Containers {
+		sort.SliceStable(c.VolumeMounts, func(i, j int) bool {
+			return c.VolumeMounts[i].Name < c.VolumeMounts[j].Name
+		})
+	}
+}
+
+func sortVolumes(sts *appsv1.StatefulSet) {
+	sort.SliceStable(sts.Spec.Template.Spec.Volumes, func(i, j int) bool {
+		return sts.Spec.Template.Spec.Volumes[i].Name < sts.Spec.Template.Spec.Volumes[j].Name
+	})
+}
+
+func sortPorts(sts *appsv1.StatefulSet) {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		sort.SliceStable(c.Ports, func(i, j int) bool {
+			return c.Ports[i].Name < c.Ports[j].Name
+		})
+	}
+	for _, c := range sts.Spec.Template.Spec.Containers {
+		sort.SliceStable(c.Ports, func(i, j int) bool {
+			return c.Ports[i].Name < c.Ports[j].Name
+		})
+	}
+}
+
+func addEnvVars(sts *appsv1.StatefulSet, containerName string, envVars ...corev1.EnvVar) {
+	for i, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == containerName {
+			addEnvVarsToContainer(&c, envVars...)
+			sts.Spec.Template.Spec.InitContainers[i] = c
+		}
+	}
+	for i, c := range sts.Spec.Template.Spec.Containers {
+		if c.Name == containerName {
+			addEnvVarsToContainer(&c, envVars...)
+			sts.Spec.Template.Spec.Containers[i] = c
+		}
+	}
+}
+
+func addEnvVarsToContainer(c *corev1.Container, envVars ...corev1.EnvVar) {
+	for _, evAdd := range envVars {
+		found := false
+		for e, ev := range c.Env {
+			if ev.Name == evAdd.Name {
+				ev.Value = evAdd.Value
+				ev.ValueFrom = evAdd.ValueFrom
+				c.Env[e] = ev
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.Env = append(c.Env, evAdd)
+		}
+	}
+}
+
+func addPorts(sts *appsv1.StatefulSet, containerName string, ports ...corev1.ContainerPort) {
+	for i, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == containerName {
+			addPortsToContainer(&c, ports...)
+			sts.Spec.Template.Spec.InitContainers[i] = c
+		}
+	}
+	for i, c := range sts.Spec.Template.Spec.Containers {
+		if c.Name == containerName {
+			addPortsToContainer(&c, ports...)
+			sts.Spec.Template.Spec.Containers[i] = c
+		}
+	}
+}
+
+func addPortsToContainer(c *corev1.Container, ports ...corev1.ContainerPort) {
+	for _, portAdd := range ports {
+		found := false
+		for p, port := range c.Ports {
+			if port.Name == portAdd.Name {
+				port.ContainerPort = portAdd.ContainerPort
+				port.HostIP = portAdd.HostIP
+				port.HostPort = portAdd.HostPort
+				port.Protocol = portAdd.Protocol
+				c.Ports[p] = port
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.Ports = append(c.Ports, portAdd)
+		}
+	}
+}
+
+func createTestCluster(role coh.CoherenceRoleSpec) *coh.CoherenceCluster {
+	ensureRoleSpecHasImages(&role)
+
+	return &coh.CoherenceCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-cluster",
+		},
+		Spec: coh.CoherenceClusterSpec{
+			CoherenceRoleSpec: role,
+		},
+	}
+}
+
+func assertStatefulSetCreation(t *testing.T, role coh.CoherenceRoleSpec, cluster *coh.CoherenceCluster, stsExpected *appsv1.StatefulSet) {
+	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, true)
+}
+
+func assertStatefulSetCreationWithHelmVerify(t *testing.T, role coh.CoherenceRoleSpec, cluster *coh.CoherenceCluster, stsExpected *appsv1.StatefulSet, doHelm bool) {
+	ensureRoleSpecHasImages(&role)
+
+	stsActual := role.CreateStatefulSet(cluster)
+	stsActual.TypeMeta.Kind = "StatefulSet"
+	stsActual.TypeMeta.APIVersion = "apps/v1"
+
+	assertStatefulSet(t, stsActual, stsExpected)
+
+	// verify against what Helm would have created - this will be removed eventually.
+	g := NewGomegaWithT(t)
+
+	if doHelm {
+		t.Log("Checking against Helm install...")
+		result, _, err := DoHelmInstall(*cluster, "test-namespace")
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Obtain the StatefulSet that Helm would have created
+		stsHelm, err := findStatefulSet(result, cluster, role.GetRoleName())
+		g.Expect(err).NotTo(HaveOccurred())
+		assertStatefulSet(t, stsActual, &stsHelm)
+	}
+}
+
+// Use the specified CoherenceCluster to trigger a fake end-to-end reconcile to
+// obtain the resources that would have been created by the Helm operator.
+func DoHelmInstall(cluster coh.CoherenceCluster, namespace string) (*stubs.HelmInstallResult, *coh.CoherenceCluster, error) {
+	mgr, err := stubs.NewFakeManager()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	opFlags := &flags.CoherenceOperatorFlags{}
+	cr := coherencecluster.NewClusterReconciler(mgr, opFlags)
+	// skip initialization for unit tests
+	cr.SetInitialized(true)
+	rr := coherencerole.NewRoleReconciler(mgr, opFlags)
+	// skip initialization for unit tests
+	rr.SetInitialized(true)
+	helm, err := stubs.NewFakeHelm(mgr, cr, rr, namespace)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	r, err := helm.HelmInstallFromCoherenceCluster(&cluster)
+
+	return r, &cluster, err
+}
+
+// Shared function to find a StatefulSet in a Helm result.
+func findStatefulSet(result *stubs.HelmInstallResult, cluster *coh.CoherenceCluster, roleName string) (appsv1.StatefulSet, error) {
+	name := cluster.GetFullRoleName(roleName)
+	sts := appsv1.StatefulSet{}
+	err := result.Get(name, &sts)
+	return sts, err
 }

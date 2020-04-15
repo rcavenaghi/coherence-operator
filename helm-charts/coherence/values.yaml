@@ -319,7 +319,7 @@ jvm:
     logging: true
   jmxmp:
     enabled: false
-    port:
+    port: 9099
 
 # ----- Coherence Container specific configuration --------------------------
 

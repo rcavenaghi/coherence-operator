@@ -42,6 +42,12 @@ func CreateCluster(yamlFile string) (*stubs.HelmInstallResult, *cohv1.CoherenceC
 		return nil, nil, err
 	}
 
+	return DoHelmInstall(cluster, namespace)
+}
+
+// Use the specified CoherenceCluster to trigger a fake end-to-end reconcile to
+// obtain the resources that would have been created by the Helm operator.
+func DoHelmInstall(cluster cohv1.CoherenceCluster, namespace string) (*stubs.HelmInstallResult, *cohv1.CoherenceCluster, error) {
 	mgr, err := stubs.NewFakeManager()
 	if err != nil {
 		return nil, nil, err

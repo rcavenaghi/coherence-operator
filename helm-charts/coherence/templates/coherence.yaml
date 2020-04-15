@@ -27,19 +27,19 @@ spec:
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      coherenceDeployment: {{ template "coherence.fullname" . }}
+      {{- include "coherence.release_labels" . | indent 6 }}
       component: coherencePod
-  serviceName: {{ template "coherence.name" . }}
+  serviceName: {{ template "coherence.fullname" . }}
   template:
     metadata:
       labels:
-{{- include "coherence.release_labels" . | indent 8 }}
+        {{- include "coherence.release_labels" . | indent 8 }}
         component: coherencePod
-{{- if .Values.coherence.excludeFromWKA }}
+        {{- if .Values.coherence.excludeFromWKA }}
         coherenceWKAMember: "false"
-{{- else }}
+        {{- else }}
         coherenceWKAMember: "true"
-{{- end }}
+      {{- end }}
 {{- if .Values.labels }}
 {{ toYaml .Values.labels | indent 8 }}
 {{- end }}
@@ -208,8 +208,10 @@ spec:
           ports:
             - name: "coherence"
               containerPort: 7
+              protocol: TCP
             - name: "health"
               containerPort: {{ $healthPort }}
+              protocol: TCP
 {{- if eq (default false .Values.jvm.debug.enabled) true }}
             - name: "debug-port"
               containerPort: {{ .Values.jvm.debug.port | default 5005 }}
@@ -219,22 +221,28 @@ spec:
             - name: {{ $port.name | quote }}
               containerPort: {{ $port.port }}
               protocol: {{ $port.protocol | default "TCP" }}
+              hostIP: {{ $port.hostIP }}
+              hostPort: {{ $port.hostPort }}
 {{-   end }}
 {{- end }}
           env:
 {{- if .Values.env -}}
 {{ toYaml .Values.env | nindent 12 }}
-{{- end }}
+            {{- end }}
             - name: COH_WKA
               value: {{ .Values.wka }}
             - name: COH_APP_DIR
               value: {{ $extAppDir }}
             - name: COH_EXTRA_CLASSPATH
               value: {{ printf "%s/*:%s" $extLibDir $extConfDir | quote }}
-            - name: COH_MGMT_HTTP_PORT
+            {{- if eq .Values.coherence.management.enabled true }}
+            - name: COH_MGMT_PORT
               value: {{ .Values.coherence.management.port | default 30000 | quote }}
+            {{- end }}
+            {{- if .Values.coherence.metrics.enabled }}
             - name: COH_METRICS_PORT
               value: {{ .Values.coherence.metrics.port | default 9612 | quote }}
+            {{- end }}
             - name: COH_MACHINE_NAME
               valueFrom:
                 fieldRef:
@@ -567,43 +575,46 @@ spec:
 {{    toYaml .Values.readinessProbe.exec | indent 12 }}
 {{- else if .Values.readinessProbe.httpGet }}
 {{    toYaml .Values.readinessProbe.httpGet | indent 12 }}
-{{- else if .Values.readinessProbe.tcpSocket }}
-{{    toYaml .Values.readinessProbe.tcpSocket | indent 12 }}
-{{- else }}
+            {{- else if .Values.readinessProbe.tcpSocket }}
+            {{    toYaml .Values.readinessProbe.tcpSocket | indent 12 }}
+            {{- else }}
             httpGet:
               port: {{ $healthPort }}
               path: "/ready"
-{{- end }}
+              scheme: HTTP
+            {{- end }}
             initialDelaySeconds: {{default 30 .Values.readinessProbe.initialDelaySeconds }}
             periodSeconds:       {{default 60 .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds:      {{default 30 .Values.readinessProbe.timeoutSeconds }}
+            successThreshold:    {{default 1 .Values.readinessProbe.successThreshold }}
             failureThreshold:    {{default 50 .Values.readinessProbe.failureThreshold }}
-            successThreshold:    {{ .Values.readinessProbe.successThreshold }}
-            timeoutSeconds:      {{default 5 .Values.readinessProbe.timeoutSeconds }}
           livenessProbe:
-{{- if .Values.livenessProbe.exec }}
-{{    toYaml .Values.livenessProbe.exec | indent 12 }}
-{{- else if .Values.livenessProbe.httpGet }}
-{{    toYaml .Values.livenessProbe.httpGet | indent 12 }}
-{{- else if .Values.livenessProbe.tcpSocket }}
-{{    toYaml .Values.livenessProbe.tcpSocket | indent 12 }}
-{{- else }}
+            {{- if .Values.livenessProbe.exec }}
+            {{    toYaml .Values.livenessProbe.exec | indent 12 }}
+            {{- else if .Values.livenessProbe.httpGet }}
+            {{    toYaml .Values.livenessProbe.httpGet | indent 12 }}
+            {{- else if .Values.livenessProbe.tcpSocket }}
+            {{    toYaml .Values.livenessProbe.tcpSocket | indent 12 }}
+            {{- else }}
             httpGet:
               port: {{ $healthPort }}
               path: "/healthz"
-{{- end }}
-            initialDelaySeconds: {{default 45 .Values.livenessProbe.initialDelaySeconds }}
+              scheme: HTTP
+            {{- end }}
+            initialDelaySeconds: {{default 60 .Values.livenessProbe.initialDelaySeconds }}
             periodSeconds:       {{default 60 .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds:      {{default 30 .Values.livenessProbe.timeoutSeconds }}
+            successThreshold:    {{default 1 .Values.livenessProbe.successThreshold }}
             failureThreshold:    {{default 5 .Values.livenessProbe.failureThreshold }}
-            timeoutSeconds:      {{default 5 .Values.livenessProbe.timeoutSeconds }}
-{{/* */}}
-{{/* ------------------------------------------------------------------------ */}}
-{{/* */}}
+          {{/* */}}
+          {{/* ------------------------------------------------------------------------ */}}
+          {{/* */}}
           command:
             - "/bin/sh"
             - "-x"
             - "/scripts/startCoherence.sh"
             - "server"
-{{/* */}}
+          {{/* */}}
 {{/* ------------------------------------------------------------------------ */}}
 {{/* */}}
 {{- if .Values.resources }}
@@ -632,24 +643,28 @@ spec:
 {{-   if .Values.logging.configMapName }}
             - name: logging-config
               mountPath: /loggingconfig
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.management.ssl }}
-{{-   if .Values.coherence.management.ssl.secrets }}
+            {{-   end }}
+            {{- end }}
+            {{- if .Values.coherence.management.enabled }}
+            {{-   if .Values.coherence.management.ssl }}
+            {{-     if .Values.coherence.management.ssl.secrets }}
             - name: management-ssl-config
               mountPath: /coherence/certs/management
               readOnly: true
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.metrics.ssl }}
-{{-   if .Values.coherence.metrics.ssl.secrets }}
+            {{-     end }}
+            {{-   end }}
+            {{- end }}
+            {{- if .Values.coherence.metrics.enabled }}
+            {{-   if .Values.coherence.metrics.ssl }}
+            {{-     if .Values.coherence.metrics.ssl.secrets }}
             - name: metrics-ssl-config
               mountPath: /coherence/certs/metrics
               readOnly: true
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.persistence }}
-{{-   if .Values.coherence.persistence.enabled }}
+            {{-     end }}
+            {{-   end }}
+            {{- end }}
+            {{- if .Values.coherence.persistence }}
+            {{-   if .Values.coherence.persistence.enabled }}
             - mountPath: "/persistence"
               name: persistence-volume
 {{-   end }}
@@ -726,18 +741,18 @@ spec:
 #       The application directory
         - name: application-dir
           emptyDir: {}
-#       The JVM diagnostics directory
+        #       The scripts loaded from a ConfigMap generated by the Helm chart
+        - name: coherence-scripts
+          configMap:
+            name: coherence-operator-scripts
+            defaultMode: 0777
+        #       The JVM diagnostics directory
         - name: jvm
 {{- if .Values.jvm.diagnosticsVolume }}
 {{ toYaml .Values.jvm.diagnosticsVolume | indent 10 }}
 {{- else }}
           emptyDir: {}
 {{- end }}
-#       The scripts loaded from a ConfigMap generated by the Helm chart
-        - name: coherence-scripts
-          configMap:
-            name: coherence-operator-scripts
-            defaultMode: 0777
 {{- if .Values.logging }}
 {{-   if .Values.logging.configMapName }}
 #       The scripts loaded from a ConfigMap generated by the Helm chart
@@ -745,37 +760,45 @@ spec:
           configMap:
             name: {{ .Values.logging.configMapName }}
             defaultMode: 0777
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.management.ssl }}
-{{-   if .Values.coherence.management.ssl.secrets }}
-#       The Management SSL certs and passwords are loaded from existing k8s secrets
+        {{-   end }}
+        {{- end }}
+        {{- if .Values.coherence.management.enabled }}
+        {{-   if .Values.coherence.management.ssl }}
+        {{-     if .Values.coherence.management.ssl.secrets }}
+        #       The Management SSL certs and passwords are loaded from existing k8s secrets
         - name: management-ssl-config
           secret:
             secretName: {{ .Values.coherence.management.ssl.secrets }}
             defaultMode: 0777
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.metrics.ssl }}
-{{-   if .Values.coherence.metrics.ssl.secrets }}
-#       The Metrics SSL certs and passwords are loaded from existing k8s secrets
+        {{-     end }}
+        {{-   end }}
+        {{- end }}
+        {{- if .Values.coherence.metrics.enabled }}
+        {{-   if .Values.coherence.metrics.ssl }}
+        {{-     if .Values.coherence.metrics.ssl.secrets }}
+        #       The Metrics SSL certs and passwords are loaded from existing k8s secrets
         - name: metrics-ssl-config
           secret:
             secretName: {{ .Values.coherence.metrics.ssl.secrets }}
             defaultMode: 0777
-{{-   end }}
-{{- end }}
-{{- if .Values.coherence.persistence }}
-{{-   if .Values.coherence.persistence.volume }}
+        {{-     end }}
+        {{-   end }}
+        {{- end }}
+        {{- if .Values.coherence.persistence }}
+        {{-   if .Values.coherence.persistence.enabled }}
+        {{-     if .Values.coherence.persistence.volume }}
         - name: persistence-volume
-{{ toYaml .Values.coherence.persistence.volume | indent 10 }}
-{{-   end }}
+        {{ toYaml .Values.coherence.persistence.volume | indent 10 }}
+        {{-     end }}
+        {{-   end }}
 {{- end }}
 {{- if .Values.coherence.snapshot }}
-{{-   if .Values.coherence.snapshot.volume }}
+        {{-   if .Values.coherence.snapshot.enabled }}
+        {{-     if .Values.coherence.snapshot.volume }}
         - name: snapshot-volume
-{{ toYaml .Values.coherence.snapshot.volume | indent 10 }}
-{{-   end }}
+        {{ toYaml .Values.coherence.snapshot.volume | indent 10 }}
+        {{-     end }}
+        {{-   end }}
 {{- end }}
 {{- if .Values.volumes }}
 {{ toYaml .Values.volumes | indent 8 }}
@@ -797,7 +820,7 @@ spec:
         name: persistence-volume
         labels:
 {{- include "coherence.release_labels" . | indent 10 }}
-          component: "coherence-vol"
+          component: "coherence-volume"
       spec:
 {{-       if .Values.coherence.persistence.persistentVolumeClaim }}
 {{ toYaml .Values.coherence.persistence.persistentVolumeClaim | indent 8 }}
@@ -812,7 +835,7 @@ spec:
         name: snapshot-volume
         labels:
 {{- include "coherence.release_labels" . | indent 10 }}
-          component: "coherence-vol"
+          component: "coherence-volume"
       spec:
 {{-       if .Values.coherence.snapshot.persistentVolumeClaim }}
 {{ toYaml .Values.coherence.snapshot.persistentVolumeClaim | indent 8 }}

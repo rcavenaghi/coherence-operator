@@ -7,8 +7,15 @@
 package v1
 
 import (
+	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
+	"strconv"
 )
 
 // NOTE: This file is used to generate the CRDs use by the Operator. The CRD files should not be manually edited
@@ -298,7 +305,7 @@ func (in *CoherenceRoleSpec) GetDefaultScalingProbe() *ScalingProbe {
 		Handler: corev1.Handler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/ha",
-				Port: intstr.FromString("health"),
+				Port: intstr.FromString(PortNameHealth),
 			},
 		},
 	}
@@ -562,4 +569,411 @@ func (in *CoherenceRoleSpec) mergeVolumes(primary, secondary []corev1.Volume) []
 	}
 
 	return merged
+}
+
+// Create the Kubernetes resources that should be deployed for this role.
+// The order of the resources in the returned array is the order that they should be
+// created or updated in Kubernetes.
+func (in *CoherenceRoleSpec) CreateKubernetesResources(cluster *CoherenceCluster) ([]runtime.Object, error) {
+	var res []runtime.Object
+
+	// Create the fluentd ConfigMap if required
+	if in.Logging.IsFluentdEnabled() {
+		cm, err := in.Logging.CreateConfigMap(cluster, in)
+		if err != nil {
+			return res, err
+		}
+		res = append(res, cm)
+	}
+
+	// Create the headless Service
+	res = append(res, in.CreateHeadlessService(cluster))
+
+	// Create the StatefulSet
+	res = append(res, in.CreateStatefulSet(cluster))
+
+	// Create the Services for each port
+	for _, p := range in.Ports {
+		if p.IsEnabled() {
+			res = append(res, p.CreateService(cluster, in))
+		}
+	}
+
+	return res, nil
+}
+
+// Create the role's common label set.
+func (in *CoherenceRoleSpec) CreateCommonLabels(cluster *CoherenceCluster) map[string]string {
+	labels := make(map[string]string)
+	labels[LabelCoherenceDeployment] = in.GetFullRoleName(cluster)
+	labels[LabelCoherenceCluster] = cluster.GetName()
+	labels[LabelCoherenceRole] = in.GetRoleName()
+	return labels
+}
+
+// Create the selector that can be used to match this roles Pods, for example by Services or StatefulSets.
+func (in *CoherenceRoleSpec) CreatePodSelectorLabels(cluster *CoherenceCluster) map[string]string {
+	selector := in.CreateCommonLabels(cluster)
+	selector[LabelComponent] = LabelComponentCoherencePod
+	return selector
+}
+
+// Create the headless Service for the role's StatefulSet.
+func (in *CoherenceRoleSpec) CreateHeadlessService(cluster *CoherenceCluster) *corev1.Service {
+	// The labels for the service
+	svcLabels := in.CreateCommonLabels(cluster)
+	svcLabels[LabelComponent] = LabelComponentCoherenceHeadless
+
+	// The selector for the service
+	selector := in.CreatePodSelectorLabels(cluster)
+
+	// Create the Service
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   cluster.GetHeadlessServiceNameForRole(in),
+			Labels: svcLabels,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP:                "None",
+			PublishNotReadyAddresses: true,
+			Selector:                 selector,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       PortNameCoherence,
+					Protocol:   corev1.ProtocolTCP,
+					Port:       7,
+					TargetPort: intstr.FromInt(7),
+				},
+			},
+		},
+	}
+
+	return svc
+}
+
+// Create the role's StatefulSet.
+func (in *CoherenceRoleSpec) CreateStatefulSet(cluster *CoherenceCluster) *appsv1.StatefulSet {
+	sts := appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   in.GetFullRoleName(cluster),
+			Labels: in.CreateCommonLabels(cluster),
+		},
+	}
+
+	// Create the PodSpec labels
+	podLabels := in.CreatePodSelectorLabels(cluster)
+	// Add the WKA member label
+	podLabels[LabelCoherenceWKAMember] = strconv.FormatBool(in.Coherence.IsWKAMember())
+	// Add any labels specified for the role
+	for k, v := range in.Labels {
+		podLabels[k] = v
+	}
+
+	replicas := in.GetReplicas()
+	var volumeMode int32 = 0777
+
+	cohContainer := in.CreateCoherenceContainer(cluster)
+
+	// Add additional ports
+	for _, p := range in.Ports {
+		cohContainer.Ports = append(cohContainer.Ports, p.CreatePort())
+	}
+
+	// append any additional VolumeMounts
+	cohContainer.VolumeMounts = append(cohContainer.VolumeMounts, in.VolumeMounts...)
+
+	// Add the component label
+	sts.Labels[LabelComponent] = LabelComponentCoherenceStatefulSet
+	sts.Spec = appsv1.StatefulSetSpec{
+		Replicas:            &replicas,
+		PodManagementPolicy: appsv1.ParallelPodManagement,
+		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+			Type: appsv1.RollingUpdateStatefulSetStrategyType,
+		},
+		RevisionHistoryLimit: pointer.Int32Ptr(5),
+		ServiceName:          cluster.GetHeadlessServiceNameForRole(in),
+		Selector: &metav1.LabelSelector{
+			MatchLabels: in.CreatePodSelectorLabels(cluster),
+		},
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels:      podLabels,
+				Annotations: in.Annotations,
+			},
+			Spec: corev1.PodSpec{
+				ImagePullSecrets:             cluster.GetImagePullSecrets(),
+				ServiceAccountName:           cluster.GetServiceAccountName(),
+				AutomountServiceAccountToken: cluster.Spec.AutomountServiceAccountToken,
+				SecurityContext:              in.SecurityContext,
+				ShareProcessNamespace:        in.ShareProcessNamespace,
+				HostIPC:                      notNilBool(in.HostIPC),
+				Tolerations:                  in.Tolerations,
+				Affinity:                     in.EnsurePodAffinity(cluster),
+				NodeSelector:                 in.NodeSelector,
+				InitContainers: []corev1.Container{
+					in.CreateUtilsContainer(cluster),
+				},
+				Containers: []corev1.Container{cohContainer},
+				Volumes: []corev1.Volume{
+					{Name: VolumeNameLogs, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					{Name: VolumeNameUtils, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					{Name: VolumeNameApplication, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					{
+						Name: VolumeNameScripts,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: ConfigMapNameScripts},
+								DefaultMode:          &volumeMode,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Add the application init-container if required
+	hasApp, c := in.Application.CreateApplicationContainer()
+	if hasApp {
+		sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, c)
+	}
+
+	// Add any network settings
+	in.Network.UpdateStatefulSet(&sts)
+	// Add any JVM settings
+	in.JVM.UpdateStatefulSet(&sts)
+	// Add any Coherence settings
+	in.Coherence.UpdateStatefulSet(cluster, in, &sts)
+	// Add any logging settings
+	in.Logging.UpdateStatefulSet(&sts, hasApp)
+
+	// append any additional Volumes
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, in.Volumes...)
+	// append any additional PVCs
+	sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, in.VolumeClaimTemplates...)
+
+	return &sts
+}
+
+// Create the Coherence container spec.
+func (in *CoherenceRoleSpec) CreateCoherenceContainer(cluster *CoherenceCluster) corev1.Container {
+	c := corev1.Container{
+		Name:    ContainerNameCoherence,
+		Image:   *in.Coherence.Image,
+		Command: []string{"/bin/sh", "-x", "/scripts/startCoherence.sh", "server"},
+		Env:     in.Env,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          PortNameCoherence,
+				ContainerPort: 7,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          PortNameHealth,
+				ContainerPort: notNilInt32OrDefault(in.HealthPort, cluster.GetHealthPort()),
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: VolumeNameLogs, MountPath: VolumeMountPathLogs},
+			{Name: VolumeNameUtils, MountPath: VolumeMountPathUtils},
+			{Name: VolumeNameApplication, MountPath: ExternalAppDir},
+			{Name: VolumeNameJVM, MountPath: VolumeMountPathJVM},
+			{Name: VolumeNameScripts, MountPath: VolumeMountPathScripts},
+		},
+	}
+
+	if in.Coherence.ImagePullPolicy != nil {
+		c.ImagePullPolicy = *in.Coherence.ImagePullPolicy
+	}
+
+	healthPort := cluster.GetHealthPort()
+
+	c.Env = append(c.Env, in.CreateDefaultEnv(cluster)...)
+
+	in.Application.UpdateCoherenceContainer(&c)
+
+	if in.Resources != nil {
+		// set the container resources if specified
+		c.Resources = *in.Resources
+	} else {
+		// No resources specified so default to 32 cores
+		c.Resources = in.CreateDefaultResources()
+	}
+
+	c.ReadinessProbe = in.CreateDefaultReadinessProbe()
+	in.ReadinessProbe.UpdateProbeSpec(healthPort, DefaultReadinessPath, c.ReadinessProbe)
+
+	c.LivenessProbe = in.CreateDefaultLivenessProbe()
+	in.LivenessProbe.UpdateProbeSpec(healthPort, DefaultLivenessPath, c.LivenessProbe)
+
+	return c
+}
+
+// Create the default environment variables.
+func (in *CoherenceRoleSpec) CreateDefaultEnv(cluster *CoherenceCluster) []corev1.EnvVar {
+	healthPort := cluster.GetHealthPort()
+
+	return []corev1.EnvVar{
+		{Name: "COH_WKA", Value: cluster.GetWkaServiceName()},
+		{Name: "COH_APP_DIR", Value: ExternalAppDir},
+		{Name: "COH_EXTRA_CLASSPATH", Value: fmt.Sprintf("%s/*:%s", ExternalLibDir, ExternalConfDir)},
+		{
+			Name: "COH_MACHINE_NAME", ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "spec.nodeName",
+				},
+			},
+		},
+		{
+			Name: "COH_MEMBER_NAME", ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "COH_POD_UID", ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.uid",
+				},
+			},
+		},
+		{
+			Name: "OPERATOR_HOST", ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ConfigMapNameOperatorConfig},
+					Key:                  OperatorConfigKeyHost,
+					Optional:             pointer.BoolPtr(true),
+				},
+			},
+		},
+		{Name: "COH_SITE_INFO_LOCATION", Value: "http://$(OPERATOR_HOST)/site/$(COH_MACHINE_NAME)"},
+		{Name: "COH_RACK_INFO_LOCATION", Value: "http://$(OPERATOR_HOST)/rack/$(COH_MACHINE_NAME)"},
+		{Name: "COH_CLUSTER_NAME", Value: cluster.Name},
+		{Name: "COH_ROLE", Value: in.GetRoleName()},
+		{Name: "COH_UTIL_DIR", Value: VolumeMountPathUtils},
+		{Name: "OPERATOR_REQUEST_TIMEOUT", Value: Int32PtrToStringWithDefault(cluster.Spec.OperatorRequestTimeout, 120)},
+		{Name: "COH_HEALTH_PORT", Value: Int32ToString(healthPort)},
+	}
+}
+
+// Create the default Container resources.
+func (in *CoherenceRoleSpec) CreateDefaultResources() corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Limits: map[corev1.ResourceName]resource.Quantity{
+			corev1.ResourceCPU: resource.MustParse("32"),
+		},
+		Requests: map[corev1.ResourceName]resource.Quantity{
+			corev1.ResourceCPU: resource.MustParse("0"),
+		},
+	}
+}
+
+// Create the default readiness probe.
+func (in *CoherenceRoleSpec) CreateDefaultReadinessProbe() *corev1.Probe {
+	return &corev1.Probe{
+		InitialDelaySeconds: 30,
+		PeriodSeconds:       60,
+		TimeoutSeconds:      30,
+		SuccessThreshold:    1,
+		FailureThreshold:    50,
+	}
+}
+
+// Update the probe with the default readiness probe action.
+func (in *CoherenceRoleSpec) UpdateDefaultReadinessProbeAction(probe *corev1.Probe) *corev1.Probe {
+	probe.HTTPGet = &corev1.HTTPGetAction{
+		Path:   DefaultReadinessPath,
+		Port:   intstr.FromInt(int(DefaultHealthPort)),
+		Scheme: corev1.URISchemeHTTP,
+	}
+	return probe
+}
+
+// Create the default liveness probe.
+func (in *CoherenceRoleSpec) CreateDefaultLivenessProbe() *corev1.Probe {
+	return &corev1.Probe{
+		InitialDelaySeconds: 60,
+		PeriodSeconds:       60,
+		TimeoutSeconds:      30,
+		SuccessThreshold:    1,
+		FailureThreshold:    5,
+	}
+}
+
+// Update the probe with the default liveness probe action.
+func (in *CoherenceRoleSpec) UpdateDefaultLivenessProbeAction(probe *corev1.Probe) *corev1.Probe {
+	probe.HTTPGet = &corev1.HTTPGetAction{
+		Path:   DefaultLivenessPath,
+		Port:   intstr.FromInt(int(DefaultHealthPort)),
+		Scheme: corev1.URISchemeHTTP,
+	}
+	return probe
+}
+
+// Get the Utils init-container spec.
+func (in *CoherenceRoleSpec) CreateUtilsContainer(cluster *CoherenceCluster) corev1.Container {
+	c := corev1.Container{
+		Name:    ContainerNameUtils,
+		Image:   *in.CoherenceUtils.Image,
+		Command: []string{"/files/utils-init"},
+		Env: []corev1.EnvVar{
+			{Name: "COH_UTIL_DIR", Value: VolumeMountPathUtils},
+			{Name: "COH_CLUSTER_NAME", Value: cluster.Name},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: VolumeNameUtils, MountPath: VolumeMountPathUtils},
+		},
+	}
+
+	// set the image pull policy if set for the role
+	if in.CoherenceUtils != nil && in.CoherenceUtils.ImagePullPolicy != nil {
+		c.ImagePullPolicy = *in.CoherenceUtils.ImagePullPolicy
+	}
+
+	// set the persistence volumes if required
+	if in.Coherence != nil {
+		in.Coherence.AddPersistenceVolumeMounts(&c)
+	}
+	return c
+}
+
+// Get the Pod Affinity either from that configured for the cluster or the default affinity.
+func (in *CoherenceRoleSpec) EnsurePodAffinity(cluster *CoherenceCluster) *corev1.Affinity {
+	if in != nil && in.Affinity != nil {
+		return in.Affinity
+	}
+	// return the default affinity which attempts to spread the Pods for a role across fault domains
+	return in.CreateDefaultPodAffinity(cluster)
+}
+
+// Create the default Pod Affinity to use in a role's StatefulSet.
+func (in *CoherenceRoleSpec) CreateDefaultPodAffinity(cluster *CoherenceCluster) *corev1.Affinity {
+	return &corev1.Affinity{
+		PodAntiAffinity: &corev1.PodAntiAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+				{
+					Weight: 1,
+					PodAffinityTerm: corev1.PodAffinityTerm{
+						TopologyKey: AffinityTopologyKey,
+						LabelSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      LabelCoherenceCluster,
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   []string{cluster.GetName()},
+								},
+								{
+									Key:      LabelCoherenceRole,
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   []string{in.GetRoleName()},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }

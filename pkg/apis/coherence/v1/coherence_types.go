@@ -7,7 +7,16 @@
 package v1
 
 import (
+	"bytes"
+	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
+	"strconv"
+	"strings"
+	"text/template"
 	"time"
 )
 
@@ -72,6 +81,90 @@ func MergeMap(m1, m2 map[string]string) map[string]string {
 	}
 
 	return merged
+}
+
+func notNilBool(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+
+func notNilString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func notNilStringOrDefault(s *string, dflt string) string {
+	if s == nil {
+		return dflt
+	}
+	return *s
+}
+
+func notNilInt32(i *int32) int32 {
+	return notNilInt32OrDefault(i, 0)
+}
+
+func notNilInt32OrDefault(i *int32, dflt int32) int32 {
+	if i == nil {
+		return dflt
+	}
+	return *i
+}
+
+// Ensure that the StatefulSet has a container with the specified name
+func EnsureContainer(name string, sts *appsv1.StatefulSet) *corev1.Container {
+	c := FindContainer(name, sts)
+	if c == nil {
+		c = &corev1.Container{Name: name}
+		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, *c)
+	}
+	return c
+}
+
+// Ensure that the StatefulSet has a container with the specified name
+func ReplaceContainer(sts *appsv1.StatefulSet, cNew *corev1.Container) {
+	for i, c := range sts.Spec.Template.Spec.Containers {
+		if c.Name == cNew.Name {
+			sts.Spec.Template.Spec.Containers[i] = *cNew
+			return
+		}
+	}
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, *cNew)
+}
+
+// Find the StatefulSet container with the specified name.
+func FindContainer(name string, sts *appsv1.StatefulSet) *corev1.Container {
+	for _, c := range sts.Spec.Template.Spec.Containers {
+		if c.Name == name {
+			return &c
+		}
+	}
+	return nil
+}
+
+// Find the StatefulSet init-container with the specified name.
+func FindInitContainer(name string, sts *appsv1.StatefulSet) *corev1.Container {
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == name {
+			return &c
+		}
+	}
+	return nil
+}
+
+// Ensure that the StatefulSet has a volume with the specified name
+func ReplaceVolume(sts *appsv1.StatefulSet, volNew corev1.Volume) {
+	for i, v := range sts.Spec.Template.Spec.Volumes {
+		if v.Name == volNew.Name {
+			sts.Spec.Template.Spec.Volumes[i] = volNew
+			return
+		}
+	}
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volNew)
 }
 
 // ----- ApplicationSpec struct ---------------------------------------------
@@ -170,6 +263,58 @@ func (in *ApplicationSpec) DeepCopyWithDefaults(defaults *ApplicationSpec) *Appl
 	}
 
 	return &clone
+}
+
+// Create the application init-container if enabled
+func (in *ApplicationSpec) CreateApplicationContainer() (bool, corev1.Container) {
+	if in == nil || in.Image == nil {
+		return false, corev1.Container{}
+	}
+
+	appDir := notNilStringOrDefault(in.AppDir, AppDir)
+	libDir := notNilStringOrDefault(in.LibDir, LibDir)
+	confDir := notNilStringOrDefault(in.ConfigDir, ConfDir)
+
+	c := corev1.Container{
+		Name:    ContainerNameApplication,
+		Image:   *in.Image,
+		Command: []string{DefaultCommandApplication},
+		Env: []corev1.EnvVar{
+			{Name: "EXTERNAL_APP_DIR", Value: ExternalAppDir},
+			{Name: "APP_DIR", Value: appDir},
+			{Name: "EXTERNAL_LIB_DIR", Value: ExternalLibDir},
+			{Name: "LIB_DIR", Value: libDir},
+			{Name: "EXTERNAL_CONF_DIR", Value: ExternalConfDir},
+			{Name: "CONF_DIR", Value: confDir},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: VolumeNameUtils, MountPath: VolumeMountPathUtils},
+			{Name: VolumeNameApplication, MountPath: ExternalAppDir},
+		},
+	}
+
+	if in.ImagePullPolicy != nil {
+		c.ImagePullPolicy = *in.ImagePullPolicy
+	}
+
+	return true, c
+}
+
+func (in *ApplicationSpec) UpdateCoherenceContainer(c *corev1.Container) {
+	if in == nil {
+		return
+	}
+
+	if in.Type != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "APP_TYPE", Value: *in.Type})
+	}
+	if in.Main != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_MAIN_CLASS", Value: *in.Main})
+	}
+	if in.Args != nil && len(in.Args) > 0 {
+		args := strings.Join(in.Args, " ")
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_MAIN_ARGS", Value: args})
+	}
 }
 
 // ----- CoherenceSpec struct -----------------------------------------------
@@ -278,6 +423,128 @@ func (in *CoherenceSpec) IsWKAMember() bool {
 	return in != nil && (in.ExcludeFromWKA == nil || !*in.ExcludeFromWKA)
 }
 
+// Determine whether persistence is enabled
+func (in *CoherenceSpec) IsPersistenceEnabled() bool {
+	return in.Persistence != nil && in.Persistence.Enabled != nil && *in.Persistence.Enabled
+}
+
+// Determine whether snapshots is enabled
+func (in *CoherenceSpec) IsSnapshotsEnabled() bool {
+	return in.Snapshot != nil && in.Snapshot.Enabled != nil && *in.Snapshot.Enabled
+}
+
+// Add the persistence and snapshot volume mounts to the specified container
+func (in *CoherenceSpec) AddPersistenceVolumeMounts(c *corev1.Container) {
+	if in == nil {
+		// nothing to update
+		return
+	}
+
+	// Add the persistence volume mount if required
+	if in.IsPersistenceEnabled() {
+		// add the persistence volume mount
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      VolumeNamePersistence,
+			MountPath: VolumeMountPathPersistence,
+		})
+	}
+
+	// Add the snapshot volume mount if required
+	if in.IsSnapshotsEnabled() {
+		// Snapshots is enabled so use the snapshot mount
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{Name: VolumeNameSnapshots, MountPath: VolumeMountPathSnapshots})
+		//} else {
+		//	// no specific snapshot spec set so use the root mount point
+		//	rootSnapshots := corev1.VolumeMount{Name: VolumeNameSnapshots, MountPath: VolumeMountPathRootSnapshots}
+		//	c.VolumeMounts = append(c.VolumeMounts, rootSnapshots)
+	}
+}
+
+// Add the persistence and snapshot persistent volume claims
+func (in *CoherenceSpec) AddPersistencePVCs(cluster *CoherenceCluster, role *CoherenceRoleSpec, sts *appsv1.StatefulSet) {
+	// Add the persistence PVC if required
+	if required, pvc := in.Persistence.CreatePersistentVolumeClaim(cluster, role, VolumeNamePersistence); required {
+		sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, *pvc)
+	}
+
+	// Add the snapshot PVC if required
+	if required, pvc := in.Snapshot.CreatePersistentVolumeClaim(cluster, role, VolumeNameSnapshots); required {
+		sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, *pvc)
+	}
+}
+
+// Add the persistence and snapshot volumes
+func (in *CoherenceSpec) AddPersistenceVolumes(sts *appsv1.StatefulSet) {
+	// Add the persistence volume if required
+	if in.IsPersistenceEnabled() && in.Persistence.Volume != nil {
+		source := corev1.VolumeSource{}
+		in.Persistence.Volume.DeepCopyInto(&source)
+		vol := corev1.Volume{
+			Name:         VolumeNamePersistence,
+			VolumeSource: source,
+		}
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, vol)
+	}
+
+	// Add the snapshot volume if required
+	if in.IsSnapshotsEnabled() && in.Snapshot.Volume != nil {
+		source := corev1.VolumeSource{}
+		in.Snapshot.Volume.DeepCopyInto(&source)
+		vol := corev1.Volume{
+			Name:         VolumeNameSnapshots,
+			VolumeSource: source,
+		}
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, vol)
+	}
+}
+
+// Apply Coherence settings to the StatefulSet.
+func (in *CoherenceSpec) UpdateStatefulSet(cluster *CoherenceCluster, role *CoherenceRoleSpec, sts *appsv1.StatefulSet) {
+	if in == nil {
+		return
+	}
+
+	// Get the Coherence container
+	c := EnsureContainer(ContainerNameCoherence, sts)
+	defer ReplaceContainer(sts, c)
+
+	if in.CacheConfig != nil && *in.CacheConfig != "" {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_CACHE_CONFIG", Value: *in.CacheConfig})
+	}
+
+	if in.OverrideConfig != nil && *in.OverrideConfig != "" {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_OVERRIDE_CONFIG", Value: *in.OverrideConfig})
+	}
+
+	if in.LogLevel != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOG_LEVEL", Value: Int32PtrToString(in.LogLevel)})
+	}
+
+	if in.StorageEnabled != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_STORAGE_ENABLED", Value: BoolPtrToString(in.StorageEnabled)})
+	}
+
+	if in.IsPersistenceEnabled() {
+		// enable persistence environment variable
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_PERSISTENCE_ENABLED", Value: "true"})
+	}
+
+	if in.IsSnapshotsEnabled() {
+		// enable snapshot environment variable
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_SNAPSHOT_ENABLED", Value: "true"})
+	}
+
+	in.Management.AddSSLVolumes(sts, c, VolumeNameManagementSSL, VolumeMountPathManagementCerts)
+	c.Env = append(c.Env, in.Management.CreateEnvVars("COH_MGMT", VolumeMountPathManagementCerts, DefaultManagementPort)...)
+
+	in.Metrics.AddSSLVolumes(sts, c, VolumeNameMetricsSSL, VolumeMountPathMetricsCerts)
+	c.Env = append(c.Env, in.Metrics.CreateEnvVars("COH_METRICS", VolumeMountPathMetricsCerts, DefaultMetricsPort)...)
+
+	in.AddPersistenceVolumeMounts(c)
+	in.AddPersistenceVolumes(sts)
+	in.AddPersistencePVCs(cluster, role, sts)
+}
+
 // ----- JVMSpec struct -----------------------------------------------------
 
 // The JVM configuration.
@@ -362,6 +629,60 @@ func (in *JVMSpec) DeepCopyWithDefaults(defaults *JVMSpec) *JVMSpec {
 	}
 
 	return &clone
+}
+
+// Update the StatefulSet with any JVM specific settings
+func (in *JVMSpec) UpdateStatefulSet(sts *appsv1.StatefulSet) {
+	c := EnsureContainer(ContainerNameCoherence, sts)
+	defer ReplaceContainer(sts, c)
+
+	var gc *JvmGarbageCollectorSpec
+
+	if in != nil {
+		// Add debug settings
+		in.Debug.UpdateCoherenceContainer(c)
+
+		// Add environment variables to the Coherence container
+		if in.Args != nil && len(in.Args) > 0 {
+			args := strings.Join(in.Args, " ")
+			c.Env = append(c.Env, corev1.EnvVar{Name: "JVM_ARGS", Value: args})
+		}
+
+		if in.Memory != nil {
+			c.Env = append(c.Env, in.Memory.CreateEnvVars()...)
+		}
+
+		if in.Jmxmp != nil {
+			c.Env = append(c.Env, in.Jmxmp.CreateEnvVars()...)
+		}
+
+		if in.Gc != nil {
+			gc = in.Gc
+		}
+	}
+
+	c.Env = append(c.Env, gc.CreateEnvVars()...)
+
+	// Configure the JVM to use container limits (true by default)
+	useContainerLimits := in == nil || in.UseContainerLimits == nil || *in.UseContainerLimits
+	c.Env = append(c.Env, corev1.EnvVar{Name: "JVM_USE_CONTAINER_LIMITS", Value: strconv.FormatBool(useContainerLimits)})
+
+	// Configure the JVM to use Flight Recorder (true by default)
+	useFlightRecorder := in == nil || in.FlightRecorder == nil || *in.FlightRecorder
+	c.Env = append(c.Env, corev1.EnvVar{Name: "JVM_FLIGHT_RECORDER", Value: strconv.FormatBool(useFlightRecorder)})
+
+	// Add diagnostic volume if specified otherwise use an empty-volume
+	if in != nil && in.DiagnosticsVolume != nil {
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         VolumeNameJVM,
+			VolumeSource: *in.DiagnosticsVolume,
+		})
+	} else {
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         VolumeNameJVM,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
 }
 
 // ----- ImageSpec struct ---------------------------------------------------
@@ -477,6 +798,117 @@ func (in *LoggingSpec) DeepCopyWithDefaults(defaults *LoggingSpec) *LoggingSpec 
 	return &clone
 }
 
+func (in *LoggingSpec) CreateConfigMap(cluster *CoherenceCluster, role *CoherenceRoleSpec) (*corev1.ConfigMap, error) {
+	fluentdConfig, err := in.GetFluentdConfig(cluster, role)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := role.CreateCommonLabels(cluster)
+	labels[LabelComponent] = LabelComponentEfkConfig
+
+	cm := corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf(EfkConfigMapNameTemplate, role.GetFullRoleName(cluster)),
+			Labels: labels,
+		},
+		Data: map[string]string{"fluentd-coherence.conf": fluentdConfig},
+	}
+
+	return &cm, nil
+}
+
+func (in *LoggingSpec) IsFluentdEnabled() bool {
+	return in != nil && in.Fluentd != nil && in.Fluentd.Enabled != nil && *in.Fluentd.Enabled
+}
+
+func (in *LoggingSpec) GetFluentdConfig(cluster *CoherenceCluster, role *CoherenceRoleSpec) (string, error) {
+	l := LoggingConfigTemplate{
+		ClusterName: cluster.Name,
+		RoleName:    role.GetRoleName(),
+		Logging:     in,
+	}
+
+	return l.Parse()
+}
+
+// Apply the logging configuration to the StatefulSet
+func (in *LoggingSpec) UpdateStatefulSet(sts *appsv1.StatefulSet, hasApp bool) {
+	c := EnsureContainer(ContainerNameCoherence, sts)
+	defer ReplaceContainer(sts, c)
+
+	if in == nil {
+		// just set the default logging config
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: DefaultLoggingConfig})
+		return
+	}
+
+	if in.ConfigFile != nil && *in.ConfigFile != "" {
+		if in.ConfigMapName != nil && *in.ConfigMapName != "" {
+			// Logging config should come from the ConfigMap
+			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: VolumeMountPathLoggingConfig + "/" + *in.ConfigFile})
+		} else if hasApp {
+			// Logging config should come from the external config directory
+			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: ExternalConfDir + "/" + *in.ConfigFile})
+		} else {
+			// Logging config is as set
+			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: *in.ConfigFile})
+		}
+	} else {
+		// Logging config is the default
+		c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: DefaultLoggingConfig})
+	}
+
+	if in.ConfigMapName != nil && *in.ConfigMapName != "" {
+		// Append the ConfigMap volume mount
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      VolumeNameLoggingConfig,
+			MountPath: VolumeMountPathLoggingConfig,
+		})
+
+		// Append the ConfigMap volume
+		vol := corev1.Volume{
+			Name: VolumeNameLoggingConfig,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "test-logging-configmap",
+					},
+					DefaultMode: pointer.Int32Ptr(int32(0777)),
+				},
+			},
+		}
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, vol)
+	}
+
+	// Apply any fluentd configuration
+	in.Fluentd.UpdateStatefulSet(sts)
+}
+
+// ----- LoggingConfigTemplate struct ---------------------------------------
+
+// A struct used when converting the fluentd config template to a string using go templating.
+type LoggingConfigTemplate struct {
+	ClusterName string
+	RoleName    string
+	Logging     *LoggingSpec
+}
+
+// Parse the fluentd configuration.
+func (in LoggingConfigTemplate) Parse() (string, error) {
+	t, err := template.New("efk").Parse(EfkConfig)
+	if err != nil {
+		return "", err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := t.Execute(buf, in); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
 // ----- PersistentStorageSpec struct ---------------------------------------
 
 // PersistenceStorageSpec defines the persistence settings for the Coherence
@@ -533,6 +965,32 @@ func (in *PersistentStorageSpec) DeepCopyWithDefaults(defaults *PersistentStorag
 	}
 
 	return &clone
+}
+
+// Create a PersistentVolumeClaim
+func (in *PersistentStorageSpec) CreatePersistentVolumeClaim(cluster *CoherenceCluster, role *CoherenceRoleSpec, name string) (bool, *corev1.PersistentVolumeClaim) {
+	if in == nil || in.Enabled == nil || !*in.Enabled || in.Volume != nil {
+		// Either persistence is disabled or we're using a normal Volume
+		return false, nil
+	}
+
+	spec := corev1.PersistentVolumeClaimSpec{}
+	if in.PersistentVolumeClaim != nil {
+		in.PersistentVolumeClaim.DeepCopyInto(&spec)
+	}
+
+	labels := role.CreateCommonLabels(cluster)
+	labels[LabelComponent] = LabelComponentPVC
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+		},
+		Spec: spec,
+	}
+
+	return true, pvc
 }
 
 // ----- SSLSpec struct -----------------------------------------------------
@@ -702,6 +1160,73 @@ func (in *SSLSpec) DeepCopyWithDefaults(defaults *SSLSpec) *SSLSpec {
 	return &clone
 }
 
+// Create the SSL environment variables
+func (in *SSLSpec) CreateEnvVars(prefix, secretMount string) []corev1.EnvVar {
+	var envVars []corev1.EnvVar
+
+	if in == nil {
+		return envVars
+	}
+
+	if in.Enabled != nil && *in.Enabled {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_ENABLED", Value: "true"})
+	}
+
+	if in.Secrets != nil && *in.Secrets != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_CERTS", Value: secretMount})
+	}
+
+	if in.KeyStore != nil && *in.KeyStore != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEYSTORE", Value: *in.KeyStore})
+	}
+
+	if in.KeyStorePasswordFile != nil && *in.KeyStorePasswordFile != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEYSTORE_PASSWORD_FILE", Value: *in.KeyStorePasswordFile})
+	}
+
+	if in.KeyPasswordFile != nil && *in.KeyPasswordFile != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEY_PASSWORD_FILE", Value: *in.KeyPasswordFile})
+	}
+
+	if in.KeyStoreAlgorithm != nil && *in.KeyStoreAlgorithm != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEYSTORE_ALGORITHM", Value: *in.KeyStoreAlgorithm})
+	}
+
+	if in.KeyStoreProvider != nil && *in.KeyStoreProvider != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEYSTORE_PROVIDER", Value: *in.KeyStoreProvider})
+	}
+
+	if in.KeyStoreType != nil && *in.KeyStoreType != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_KEYSTORE_TYPE", Value: *in.KeyStoreType})
+	}
+
+	if in.TrustStore != nil && *in.TrustStore != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_TRUSTSTORE", Value: *in.TrustStore})
+	}
+
+	if in.TrustStorePasswordFile != nil && *in.TrustStorePasswordFile != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_TRUSTSTORE_PASSWORD_FILE", Value: *in.TrustStorePasswordFile})
+	}
+
+	if in.TrustStoreAlgorithm != nil && *in.TrustStoreAlgorithm != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_TRUSTSTORE_ALGORITHM", Value: *in.TrustStoreAlgorithm})
+	}
+
+	if in.TrustStoreProvider != nil && *in.TrustStoreProvider != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_TRUSTSTORE_PROVIDER", Value: *in.TrustStoreProvider})
+	}
+
+	if in.TrustStoreType != nil && *in.TrustStoreType != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_TRUSTSTORE_TYPE", Value: *in.TrustStoreType})
+	}
+
+	if in.RequireClientCert != nil && *in.RequireClientCert {
+		envVars = append(envVars, corev1.EnvVar{Name: prefix + "_SSL_REQUIRE_CLIENT_CERT", Value: "true"})
+	}
+
+	return envVars
+}
+
 // ----- PortSpec struct ----------------------------------------------------
 // PortSpec defines the port settings for a Coherence component
 // +k8s:openapi-gen=true
@@ -711,10 +1236,26 @@ type PortSpec struct {
 	Port int32 `json:"port,omitempty"`
 	// Protocol for container port. Must be UDP or TCP. Defaults to "TCP"
 	// +optional
-	Protocol *string `json:"protocol,omitempty"`
+	Protocol *corev1.Protocol `json:"protocol,omitempty"`
 	// Service specifies the service used to expose the port.
 	// +optional
 	Service *ServiceSpec `json:"service,omitempty"`
+	// The port on each node on which this service is exposed when type=NodePort or LoadBalancer.
+	// Usually assigned by the system. If specified, it will be allocated to the service
+	// if unused or else creation of the service will fail.
+	// Default is to auto-allocate a port if the ServiceType of this Service requires one.
+	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport
+	// +optional
+	NodePort *int32 `json:"nodePort,omitempty"`
+	// Number of port to expose on the host.
+	// If specified, this must be a valid port number, 0 < x < 65536.
+	// If HostNetwork is specified, this must match ContainerPort.
+	// Most containers do not need this.
+	// +optional
+	HostPort *int32 `json:"hostPort,omitempty"`
+	// What host IP to bind the external port to.
+	// +optional
+	HostIP *string `json:"hostIP,omitempty"`
 }
 
 // DeepCopyWithDefaults returns a copy of this PortSpec struct with any nil or not set values set
@@ -749,6 +1290,24 @@ func (in *PortSpec) DeepCopyWithDefaults(defaults *PortSpec) *PortSpec {
 		clone.Service = in.Service
 	} else {
 		clone.Service = defaults.Service
+	}
+
+	if in.NodePort != nil {
+		clone.NodePort = in.HostPort
+	} else {
+		clone.NodePort = defaults.HostPort
+	}
+
+	if in.HostPort != nil {
+		clone.HostPort = in.HostPort
+	} else {
+		clone.HostPort = defaults.HostPort
+	}
+
+	if in.HostIP != nil {
+		clone.HostIP = in.HostIP
+	} else {
+		clone.HostIP = defaults.HostIP
 	}
 
 	return &clone
@@ -805,6 +1364,98 @@ func (in *NamedPortSpec) DeepCopyWithDefaults(defaults *NamedPortSpec) *NamedPor
 	}
 
 	return &clone
+}
+
+// Create the Kubernetes service to expose this port.
+func (in *NamedPortSpec) CreateService(cluster *CoherenceCluster, role *CoherenceRoleSpec) *corev1.Service {
+	var name string
+	if in.Service != nil && in.Service.Name != nil {
+		name = in.Service.GetName()
+	} else {
+		name = fmt.Sprintf("%s-%s", role.GetFullRoleName(cluster), in.Name)
+	}
+
+	// The labels for the service
+	svcLabels := role.CreateCommonLabels(cluster)
+	svcLabels[LabelComponent] = fmt.Sprintf(LabelComponentPortServiceTemplate, in.Name)
+	if in.Service != nil {
+		for k, v := range in.Service.Labels {
+			svcLabels[k] = v
+		}
+	}
+
+	// The service annotations
+	var ann map[string]string
+	if in.Service != nil && in.Service.Annotations != nil {
+		ann = in.Service.Annotations
+	}
+
+	// Create the Service spec
+	spec := in.Service.createServiceSpec()
+
+	// Add the port
+	spec.Ports = []corev1.ServicePort{
+		{
+			Name:       in.Name,
+			Protocol:   in.GetProtocol(),
+			Port:       in.GetPort(),
+			TargetPort: intstr.FromString(in.Name),
+			NodePort:   in.GetNodePort(),
+		},
+	}
+
+	// Add the service selector
+	spec.Selector = role.CreatePodSelectorLabels(cluster)
+
+	svc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Labels:      svcLabels,
+			Annotations: ann,
+		},
+		Spec: spec,
+	}
+
+	return &svc
+}
+
+func (in *NamedPortSpec) IsEnabled() bool {
+	return in != nil && in.Service.IsEnabled()
+}
+
+func (in *NamedPortSpec) GetProtocol() corev1.Protocol {
+	if in == nil || in.Protocol == nil {
+		return corev1.ProtocolTCP
+	}
+	return *in.Protocol
+}
+
+func (in *NamedPortSpec) GetPort() int32 {
+	switch {
+	case in == nil:
+		return 0
+	case in != nil && in.Service != nil && in.Service.Port != nil:
+		return *in.Service.Port
+	default:
+		return in.Port
+	}
+}
+
+func (in *NamedPortSpec) GetNodePort() int32 {
+	if in == nil || in.NodePort == nil {
+		return 0
+	}
+	return *in.NodePort
+}
+
+func (in *NamedPortSpec) CreatePort() corev1.ContainerPort {
+	return corev1.ContainerPort{
+		Name:          in.Name,
+		ContainerPort: in.GetPort(),
+		Protocol:      in.GetProtocol(),
+		HostPort:      notNilInt32(in.HostPort),
+		HostIP:        notNilString(in.HostIP),
+	}
 }
 
 // Merge merges two arrays of NamedPortSpec structs.
@@ -911,6 +1562,45 @@ func (in *JvmDebugSpec) DeepCopyWithDefaults(defaults *JvmDebugSpec) *JvmDebugSp
 	return &clone
 }
 
+// Update the Coherence Container with any JVM specific settings
+func (in *JvmDebugSpec) UpdateCoherenceContainer(c *corev1.Container) {
+	if in == nil || in.Enabled == nil || *in.Enabled == false {
+		// nothing to do, debug is either nil or disabled
+		return
+	}
+
+	c.Ports = append(c.Ports, corev1.ContainerPort{
+		Name:          PortNameDebug,
+		ContainerPort: notNilInt32OrDefault(in.Port, DefaultDebugPort),
+	})
+
+	c.Env = append(c.Env, in.CreateEnvVars()...)
+}
+
+// Create the JVM debugger environment variables for the Coherence container.
+func (in *JvmDebugSpec) CreateEnvVars() []corev1.EnvVar {
+	var envVars []corev1.EnvVar
+
+	if in == nil || in.Enabled == nil || !*in.Enabled {
+		return envVars
+	}
+
+	envVars = append(envVars,
+		corev1.EnvVar{Name: "JVM_DEBUG_ENABLED", Value: "true"},
+		corev1.EnvVar{Name: "JVM_DEBUG_PORT", Value: Int32PtrToStringWithDefault(in.Port, DefaultDebugPort)},
+	)
+
+	if in != nil && in.Suspend != nil && *in.Suspend {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_DEBUG_SUSPEND", Value: "true"})
+	}
+
+	if in != nil && in.Attach != nil {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_DEBUG_ATTACH", Value: *in.Attach})
+	}
+
+	return envVars
+}
+
 // ----- JVM GC struct ------------------------------------------------------
 
 // Options for managing the JVM garbage collector.
@@ -925,7 +1615,7 @@ type JvmGarbageCollectorSpec struct {
 	// If set to a value other than those above then
 	// the default collector for the JVM will be used.
 	// +optional
-	Collector *string `json:"enabled,omitempty"`
+	Collector *string `json:"collector,omitempty"`
 	// Args specifies the GC options to pass to the JVM.
 	// +optional
 	Args []string `json:"args,omitempty"`
@@ -972,6 +1662,31 @@ func (in *JvmGarbageCollectorSpec) DeepCopyWithDefaults(defaults *JvmGarbageColl
 	}
 
 	return &clone
+}
+
+// Create the GC environment variables for the Coherence container.
+func (in *JvmGarbageCollectorSpec) CreateEnvVars() []corev1.EnvVar {
+	var envVars []corev1.EnvVar
+
+	// Add any GC args
+	if in != nil && in.Args != nil && len(in.Args) > 0 {
+		args := strings.Join(in.Args, " ")
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_GC_ARGS", Value: args})
+	}
+
+	// Set the collector to use
+	if in != nil && in.Collector != nil && *in.Collector != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_GC_COLLECTOR", Value: *in.Collector})
+	}
+
+	// Enable or disable GC logging
+	if in != nil && in.Logging != nil {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_GC_LOGGING", Value: BoolPtrToString(in.Logging)})
+	} else {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_GC_LOGGING", Value: "true"})
+	}
+
+	return envVars
 }
 
 // ----- JVM MemoryGC struct ------------------------------------------------
@@ -1058,6 +1773,39 @@ func (in *JvmMemorySpec) DeepCopyWithDefaults(defaults *JvmMemorySpec) *JvmMemor
 	return &clone
 }
 
+// Create the environment variables to add to the Coherence container
+func (in *JvmMemorySpec) CreateEnvVars() []corev1.EnvVar {
+	var envVars []corev1.EnvVar
+
+	if in == nil {
+		return envVars
+	}
+
+	if in.HeapSize != nil && *in.HeapSize != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_HEAP_SIZE", Value: *in.HeapSize})
+	}
+
+	if in.DirectMemorySize != nil && *in.DirectMemorySize != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_DIRECT_MEMORY_SIZE", Value: *in.DirectMemorySize})
+	}
+
+	if in.StackSize != nil && *in.StackSize != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_STACK_SIZE", Value: *in.StackSize})
+	}
+
+	if in.MetaspaceSize != nil && *in.MetaspaceSize != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_METASPACE_SIZE", Value: *in.MetaspaceSize})
+	}
+
+	if in.NativeMemoryTracking != nil && *in.NativeMemoryTracking != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "JVM_NATIVE_MEMORY_TRACKING", Value: *in.NativeMemoryTracking})
+	}
+
+	envVars = append(envVars, in.OnOutOfMemory.CreateEnvVars()...)
+
+	return envVars
+}
+
 // ----- JVM Out Of Memory struct -------------------------------------------
 
 // Options for managing the JVM behaviour when an OutOfMemoryError occurs.
@@ -1104,6 +1852,22 @@ func (in *JvmOutOfMemorySpec) DeepCopyWithDefaults(defaults *JvmOutOfMemorySpec)
 	return &clone
 }
 
+// Create the environment variables for the out of memory actions
+func (in *JvmOutOfMemorySpec) CreateEnvVars() []corev1.EnvVar {
+	var envVars []corev1.EnvVar
+
+	if in != nil {
+		if in.Exit != nil {
+			envVars = append(envVars, corev1.EnvVar{Name: "JVM_OOM_EXIT", Value: BoolPtrToString(in.Exit)})
+		}
+		if in.HeapDump != nil {
+			envVars = append(envVars, corev1.EnvVar{Name: "JVM_OOM_HEAP_DUMP", Value: BoolPtrToString(in.HeapDump)})
+		}
+	}
+
+	return envVars
+}
+
 // ----- JvmJmxmpSpec struct -------------------------------------------------------
 
 // Options for configuring JMX using JMXMP.
@@ -1147,6 +1911,16 @@ func (in *JvmJmxmpSpec) DeepCopyWithDefaults(defaults *JvmJmxmpSpec) *JvmJmxmpSp
 	}
 
 	return &clone
+}
+
+// Create any required environment variables for the Coherence container
+func (in *JvmJmxmpSpec) CreateEnvVars() []corev1.EnvVar {
+	enabled := in != nil && in.Enabled != nil && *in.Enabled
+
+	envVars := []corev1.EnvVar{{Name: "JVM_JMXMP_ENABLED", Value: strconv.FormatBool(enabled)}}
+	envVars = append(envVars, corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: Int32PtrToStringWithDefault(in.Port, DefaultJmxmpPort)})
+
+	return envVars
 }
 
 // ----- PortSpecWithSSL struct ----------------------------------------------------
@@ -1207,6 +1981,50 @@ func (in *PortSpecWithSSL) DeepCopyWithDefaults(defaults *PortSpecWithSSL) *Port
 	return &clone
 }
 
+// Create environment variables for the Coherence container
+func (in *PortSpecWithSSL) CreateEnvVars(prefix, secretMount string, defaultPort int32) []corev1.EnvVar {
+	if in == nil || !notNilBool(in.Enabled) {
+		// disabled
+		return []corev1.EnvVar{{Name: prefix + "_ENABLED", Value: "false"}}
+	}
+
+	envVars := []corev1.EnvVar{{Name: prefix + "_ENABLED", Value: "true"}}
+	envVars = append(envVars, in.SSL.CreateEnvVars(prefix, secretMount)...)
+
+	// add the port environment variable
+	port := notNilInt32OrDefault(in.Port, defaultPort)
+	envVars = append(envVars, corev1.EnvVar{Name: prefix + "_PORT", Value: Int32ToString(port)})
+
+	return envVars
+}
+
+// Add the SSL secret volume and volume mount if required
+func (in *PortSpecWithSSL) AddSSLVolumes(sts *appsv1.StatefulSet, c *corev1.Container, volName, path string) {
+	if in == nil || !notNilBool(in.Enabled) || in.SSL == nil || !notNilBool(in.SSL.Enabled) {
+		// the port spec is nil or disabled or SSL is nil or disabled
+		return
+	}
+
+	if in.SSL.Secrets != nil && *in.SSL.Secrets != "" {
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      volName,
+			ReadOnly:  true,
+			MountPath: path,
+		})
+
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  *in.SSL.Secrets,
+					DefaultMode: pointer.Int32Ptr(int32(0777)),
+				},
+			},
+		})
+	}
+
+}
+
 // ----- ServiceSpec struct -------------------------------------------------
 // ServiceSpec defines the settings for a Service
 // +k8s:openapi-gen=true
@@ -1224,6 +2042,24 @@ type ServiceSpec struct {
 	// The default is "ClusterIP".
 	// +optional
 	Type *corev1.ServiceType `json:"type,omitempty"`
+	// externalIPs is a list of IP addresses for which nodes in the cluster
+	// will also accept traffic for this service.  These IPs are not managed by
+	// Kubernetes.  The user is responsible for ensuring that traffic arrives
+	// at a node with this IP.  A common example is external load-balancers
+	// that are not part of the Kubernetes system.
+	// +optional
+	ExternalIPs []string `json:"externalIPs,omitempty"`
+	// clusterIP is the IP address of the service and is usually assigned
+	// randomly by the master. If an address is specified manually and is not in
+	// use by others, it will be allocated to the service; otherwise, creation
+	// of the service will fail. This field can not be changed through updates.
+	// Valid values are "None", empty string (""), or a valid IP address. "None"
+	// can be specified for headless services when proxying is not required.
+	// Only applies to types ClusterIP, NodePort, and LoadBalancer. Ignored if
+	// type is ExternalName.
+	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#virtual-ips-and-service-proxies
+	// +optional
+	ClusterIP *string `json:"clusterIP,omitempty"`
 	// LoadBalancerIP is the IP address of the load balancer
 	// +optional
 	LoadBalancerIP *string `json:"loadBalancerIP,omitempty"`
@@ -1280,6 +2116,31 @@ type ServiceSpec struct {
 	// sessionAffinityConfig contains the configurations of session affinity.
 	// +optional
 	SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig,omitempty"`
+	// ipFamily specifies whether this Service has a preference for a particular IP family (e.g. IPv4 vs.
+	// IPv6).  If a specific IP family is requested, the clusterIP field will be allocated from that family, if it is
+	// available in the cluster.  If no IP family is requested, the cluster's primary IP family will be used.
+	// Other IP fields (loadBalancerIP, loadBalancerSourceRanges, externalIPs) and controllers which
+	// allocate external load-balancers should use the same IP family.  Endpoints for this Service will be of
+	// this family.  This field is immutable after creation. Assigning a ServiceIPFamily not available in the
+	// cluster (e.g. IPv6 in IPv4 only cluster) is an error condition and will fail during clusterIP assignment.
+	// +optional
+	IPFamily *corev1.IPFamily `json:"ipFamily,omitempty"`
+}
+
+// Set the Type of the service.
+func (in *ServiceSpec) GetName() string {
+	if in == nil || in.Name == nil {
+		return ""
+	}
+	return *in.Name
+}
+
+// Set the Type of the service.
+func (in *ServiceSpec) IsEnabled() bool {
+	if in == nil || in.Enabled == nil {
+		return true
+	}
+	return *in.Enabled
 }
 
 // Set the Type of the service.
@@ -1387,7 +2248,57 @@ func (in *ServiceSpec) DeepCopyWithDefaults(defaults *ServiceSpec) *ServiceSpec 
 		clone.SessionAffinityConfig = defaults.SessionAffinityConfig
 	}
 
+	if in.ClusterIP != nil {
+		clone.ClusterIP = in.ClusterIP
+	} else {
+		clone.ClusterIP = defaults.ClusterIP
+	}
+
+	if in.IPFamily != nil {
+		clone.IPFamily = in.IPFamily
+	} else {
+		clone.IPFamily = defaults.IPFamily
+	}
+
+	clone.ExternalIPs = MergeStringSlice(in.ExternalIPs, defaults.ExternalIPs)
+
 	return &clone
+}
+
+// Create the service spec for the port.
+func (in *ServiceSpec) createServiceSpec() corev1.ServiceSpec {
+	spec := corev1.ServiceSpec{}
+	if in != nil {
+		if in.Type != nil {
+			spec.Type = *in.Type
+		}
+		if in.LoadBalancerIP != nil {
+			spec.LoadBalancerIP = *in.LoadBalancerIP
+		}
+		if in.SessionAffinity != nil {
+			spec.SessionAffinity = *in.SessionAffinity
+		}
+		spec.LoadBalancerSourceRanges = in.LoadBalancerSourceRanges
+		if in.ExternalName != nil {
+			spec.ExternalName = *in.ExternalName
+		}
+		if in.ExternalTrafficPolicy != nil {
+			spec.ExternalTrafficPolicy = *in.ExternalTrafficPolicy
+		}
+		if in.HealthCheckNodePort != nil {
+			spec.HealthCheckNodePort = *in.HealthCheckNodePort
+		}
+		if in.PublishNotReadyAddresses != nil {
+			spec.PublishNotReadyAddresses = *in.PublishNotReadyAddresses
+		}
+		if in.ClusterIP != nil {
+			spec.ClusterIP = *in.ClusterIP
+		}
+		spec.SessionAffinityConfig = in.SessionAffinityConfig
+		spec.IPFamily = in.IPFamily
+		spec.ExternalIPs = in.ExternalIPs
+	}
+	return spec
 }
 
 // ----- ScalingSpec -----------------------------------------------------
@@ -1592,6 +2503,42 @@ func (in *ReadinessProbeSpec) DeepCopyWithDefaults(defaults *ReadinessProbeSpec)
 	return &clone
 }
 
+// Update the specified probe spec with the required configuration
+func (in *ReadinessProbeSpec) UpdateProbeSpec(port int32, path string, probe *corev1.Probe) {
+	switch {
+	case in != nil && in.Exec != nil:
+		probe.Exec = in.Exec
+	case in != nil && in.HTTPGet != nil:
+		probe.HTTPGet = in.HTTPGet
+	case in != nil && in.TCPSocket != nil:
+		probe.TCPSocket = in.TCPSocket
+	default:
+		probe.HTTPGet = &corev1.HTTPGetAction{
+			Path:   path,
+			Port:   intstr.FromInt(int(port)),
+			Scheme: corev1.URISchemeHTTP,
+		}
+	}
+
+	if in != nil {
+		if in.InitialDelaySeconds != nil {
+			probe.InitialDelaySeconds = *in.InitialDelaySeconds
+		}
+		if in.PeriodSeconds != nil {
+			probe.PeriodSeconds = *in.PeriodSeconds
+		}
+		if in.FailureThreshold != nil {
+			probe.FailureThreshold = *in.FailureThreshold
+		}
+		if in.SuccessThreshold != nil {
+			probe.SuccessThreshold = *in.SuccessThreshold
+		}
+		if in.TimeoutSeconds != nil {
+			probe.TimeoutSeconds = *in.TimeoutSeconds
+		}
+	}
+}
+
 // ----- FluentdSpec struct -------------------------------------------------
 
 // FluentdSpec defines the settings for the fluentd image
@@ -1650,6 +2597,123 @@ func (in *FluentdSpec) DeepCopyWithDefaults(defaults *FluentdSpec) *FluentdSpec 
 	return &clone
 }
 
+func (in *FluentdSpec) UpdateStatefulSet(sts *appsv1.StatefulSet) {
+	if in == nil || in.Enabled == nil || !*in.Enabled {
+		// either the fluentd spec is nil or disabled
+		return
+	}
+
+	// add the fluentd container
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, in.CreateFluentdContainer())
+
+	// add the fluentd configuration ConfigMap volume
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: VolumeNameFluentdConfig,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: fmt.Sprintf(EfkConfigMapNameTemplate, sts.Name)},
+				DefaultMode:          pointer.Int32Ptr(420),
+			},
+		},
+	})
+}
+
+func (in *FluentdSpec) CreateFluentdContainer() corev1.Container {
+	var pullPolicy corev1.PullPolicy
+	if in.ImagePullPolicy == nil {
+		pullPolicy = corev1.PullIfNotPresent
+	} else {
+		pullPolicy = *in.ImagePullPolicy
+	}
+
+	var imageName string
+	if in.Image == nil {
+		imageName = DefaultFluentdImage
+	} else {
+		imageName = *in.Image
+	}
+
+	return corev1.Container{
+		Name:            ContainerNameFluentd,
+		Image:           imageName,
+		ImagePullPolicy: pullPolicy,
+		Args:            []string{"-c", "/etc/fluent.conf"},
+		Env: []corev1.EnvVar{
+			{
+				Name: "COHERENCE_POD_ID",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.uid",
+					},
+				},
+			},
+			{
+				Name:  "FLUENTD_CONF",
+				Value: "fluentd-coherence.conf",
+			},
+			{
+				Name:  "FLUENT_ELASTICSEARCH_SED_DISABLE",
+				Value: "true",
+			},
+			{
+				Name: "ELASTICSEARCH_HOST",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: SecretNameCoherenceMonitoringConfig,
+						},
+						Key: SecretKeyElasticSearchHost,
+					},
+				},
+			},
+			{
+				Name: "ELASTICSEARCH_PORT",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: SecretNameCoherenceMonitoringConfig,
+						},
+						Key: SecretKeyElasticSearchPort,
+					},
+				},
+			},
+			{
+				Name: "ELASTICSEARCH_USER",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: SecretNameCoherenceMonitoringConfig,
+						},
+						Key: SecretKeyElasticSearchUser,
+					},
+				},
+			},
+			{
+				Name: "ELASTICSEARCH_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: SecretNameCoherenceMonitoringConfig,
+						},
+						Key: SecretKeyElasticSearchPassword,
+					},
+				},
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      VolumeNameFluentdConfig,
+				MountPath: VolumeMountPathFluentdConfig,
+				SubPath:   VolumeMountSubPathFluentdConfig,
+			},
+			{
+				Name:      VolumeNameLogs,
+				MountPath: VolumeMountPathLogs,
+			},
+		},
+	}
+}
+
 // ----- ScalingPolicy type -------------------------------------------------
 
 // ScalingPolicy describes a policy for scaling a cluster role
@@ -1692,7 +2756,7 @@ type NetworkSpec struct {
 	// selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS
 	// policy explicitly to 'ClusterFirstWithHostNet'.
 	// +optional
-	DNSPolicy *string `json:"dnsPolicy,omitempty"`
+	DNSPolicy *corev1.DNSPolicy `json:"dnsPolicy,omitempty"`
 	// HostAliases is an optional list of hosts and IPs that will be injected into the pod's hosts file if specified.
 	// This is only valid for non-hostNetwork pods.
 	// +listType=map
@@ -1765,6 +2829,23 @@ func (in *NetworkSpec) DeepCopyWithDefaults(defaults *NetworkSpec) *NetworkSpec 
 	}
 
 	return &clone
+}
+
+// Update the specified StatefulSet's network settings.
+func (in *NetworkSpec) UpdateStatefulSet(sts *appsv1.StatefulSet) {
+	if in == nil {
+		return
+	}
+
+	in.DNSConfig.UpdateStatefulSet(sts)
+
+	if in.DNSPolicy != nil {
+		sts.Spec.Template.Spec.DNSPolicy = *in.DNSPolicy
+	}
+
+	sts.Spec.Template.Spec.HostAliases = in.HostAliases
+	sts.Spec.Template.Spec.HostNetwork = notNilBool(in.HostNetwork)
+	sts.Spec.Template.Spec.Hostname = notNilString(in.Hostname)
 }
 
 // ----- PodDNSConfig -------------------------------------------------------
@@ -1853,6 +2934,29 @@ func (in *PodDNSConfig) DeepCopyWithDefaults(defaults *PodDNSConfig) *PodDNSConf
 	return &clone
 }
 
+func (in *PodDNSConfig) UpdateStatefulSet(sts *appsv1.StatefulSet) {
+	if in == nil {
+		return
+	}
+
+	cfg := corev1.PodDNSConfig{}
+
+	if in.Nameservers != nil && len(in.Nameservers) > 0 {
+		cfg.Nameservers = in.Nameservers
+		sts.Spec.Template.Spec.DNSConfig = &cfg
+	}
+
+	if in.Searches != nil && len(in.Searches) > 0 {
+		cfg.Searches = in.Searches
+		sts.Spec.Template.Spec.DNSConfig = &cfg
+	}
+
+	if in.Options != nil && len(in.Options) > 0 {
+		cfg.Options = in.Options
+		sts.Spec.Template.Spec.DNSConfig = &cfg
+	}
+}
+
 // ----- StartQuorum --------------------------------------------------------
 
 // StartQuorum defines the order that roles will be created when initially
@@ -1876,4 +2980,49 @@ type StartQuorumStatus struct {
 	StartQuorum `json:",inline"`
 	// Whether this quorum's condition has been met
 	Ready bool `json:"ready"`
+}
+
+func MergeStringSlice(s1, s2 []string) []string {
+	m := make(map[string]int)
+	if s2 != nil {
+		for _, eip := range s2 {
+			m[eip] = 0
+		}
+	}
+	if s1 != nil {
+		for _, eip := range s1 {
+			m[eip] = 0
+		}
+	}
+	var merged []string
+	for k := range m {
+		merged = append(merged, k)
+	}
+	return merged
+}
+
+// Convert an int32 pointer to a string using the default if the pointer is nil.
+func Int32PtrToStringWithDefault(i *int32, d int32) string {
+	if i == nil {
+		return Int32ToString(d)
+	}
+	return Int32ToString(*i)
+}
+
+// Convert an int32 pointer to a string.
+func Int32PtrToString(i *int32) string {
+	return Int32ToString(*i)
+}
+
+// Convert an int32 to a string.
+func Int32ToString(i int32) string {
+	return strconv.FormatInt(int64(i), 10)
+}
+
+// Convert a bool pointer to a string.
+func BoolPtrToString(b *bool) string {
+	if b != nil && *b {
+		return "true"
+	}
+	return "false"
 }

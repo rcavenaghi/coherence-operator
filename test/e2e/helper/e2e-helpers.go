@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,11 +46,6 @@ var (
 	CleanupTimeout       = time.Second * 5
 
 	tenSeconds int32 = 10
-
-	Readiness = &coh.ReadinessProbeSpec{
-		InitialDelaySeconds: &tenSeconds,
-		PeriodSeconds:       &tenSeconds,
-	}
 )
 
 type Logger interface {
@@ -159,10 +153,6 @@ func (a alwayRoleCondition) Test(*coh.CoherenceRole) bool {
 
 func (a alwayRoleCondition) String() string {
 	return "true"
-}
-
-func AlwayRoleCondition() RoleStateCondition {
-	return alwayRoleCondition{}
 }
 
 // An always true RoleStateCondition
@@ -585,15 +575,6 @@ func DumpPodLog(kubeClient kubernetes.Interface, pod *corev1.Pod, directory stri
 	}
 }
 
-// Ensure that the k8s secret has been deleted
-func EnsureSecretDeleted(kubeClient kubernetes.Interface, namespace, name string) error {
-	err := kubeClient.CoreV1().Secrets(namespace).Delete(name, &metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-	return nil
-}
-
 // Get the test k8s secret that can be used for SSL testing.
 func GetTestSslSecret() (*OperatorSSL, *coh.SSLSpec, error) {
 	return CreateSslSecret(nil, GetTestNamespace(), GetTestSSLSecretName())
@@ -745,7 +726,7 @@ func dumpCoherenceClusters(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		fmt.Printf(message, namespace, err.Error())
 		return
@@ -803,7 +784,7 @@ func dumpCoherenceRoles(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		fmt.Printf(message, namespace, err.Error())
 		return
@@ -861,7 +842,7 @@ func dumpCoherenceInternals(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -918,7 +899,7 @@ func dumpStatefulSets(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -975,7 +956,7 @@ func dumpServices(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -1032,7 +1013,7 @@ func dumpRoles(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -1089,7 +1070,7 @@ func dumpRoleBindings(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -1146,7 +1127,7 @@ func dumpServiceAccounts(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -1213,7 +1194,7 @@ func dumpPods(namespace, dir string, logger Logger) {
 		return
 	}
 
-	logsDir, err := ensureLogsDir(dir)
+	logsDir, err := EnsureLogsDir(dir)
 	if err != nil {
 		logger.Logf(message, namespace, err.Error())
 		return
@@ -1262,7 +1243,7 @@ func dumpPods(namespace, dir string, logger Logger) {
 	}
 }
 
-func ensureLogsDir(subDir string) (string, error) {
+func EnsureLogsDir(subDir string) (string, error) {
 	logs, err := FindTestLogsDir()
 	if err != nil {
 		return "", err
@@ -1320,49 +1301,4 @@ func GetFirstPodScheduledTime(pods []corev1.Pod, role string) metav1.Time {
 		}
 	}
 	return t
-}
-
-func UninstallCrds(t *testing.T) error {
-	if err := UninstallCrd(t, "coherenceclusters.coherence.oracle.com"); err != nil {
-		return err
-	}
-
-	if err := UninstallCrd(t, "coherenceroles.coherence.oracle.com"); err != nil {
-		return err
-	}
-
-	if err := UninstallCrd(t, "coherenceinternals.coherence.oracle.com"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func UninstallCrd(t *testing.T, name string) error {
-	var err error
-
-	t.Logf("Will delete CRD %s", name)
-
-	f := framework.Global
-	crd := &v1beta1.CustomResourceDefinition{}
-	crd.SetName(name)
-
-	mergePatch, err := json.Marshal(map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"finalizers": []string{},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	patch := client.ConstantPatch(types.MergePatchType, mergePatch)
-
-	t.Logf("Removing finalizer from CRD %s", name)
-	if err = f.Client.Patch(context.TODO(), crd, patch); err != nil {
-		return err
-	}
-
-	t.Logf("Actually deleting finalizer from CRD %s", name)
-	return f.Client.Delete(context.TODO(), crd)
 }
