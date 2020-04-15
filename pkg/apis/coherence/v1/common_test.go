@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * Licensed under the Universal Permissive License v 1.0 as shown at
  * http://oss.oracle.com/licenses/upl.
  */
@@ -179,7 +179,7 @@ func assertStatefulSet(t *testing.T, stsActual, stsExpected *appsv1.StatefulSet)
 
 	diffs := deep.Equal(*stsActual, *stsExpected)
 	msg := "StatefulSets not equal:"
-	if diffs != nil && len(diffs) > 0 {
+	if len(diffs) > 0 {
 		// Dump the diffs
 		err = ioutil.WriteFile(fmt.Sprintf("%s%c%s-Diff.txt", dir, os.PathSeparator, stsActual.Name), []byte(strings.Join(diffs, "\n")), os.ModePerm)
 		g.Expect(err).NotTo(HaveOccurred())

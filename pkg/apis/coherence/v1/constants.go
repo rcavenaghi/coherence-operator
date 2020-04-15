@@ -74,13 +74,14 @@ const (
 	PortNameDebug     = "debug-port"
 	PortNameHealth    = "health"
 
-	// Secret names
-	SecretNameCoherenceMonitoringConfig = "coherence-monitoring-config"
-	// Secret keys
-	SecretKeyElasticSearchHost     = "elasticsearchhost"
-	SecretKeyElasticSearchPort     = "elasticsearchport"
-	SecretKeyElasticSearchUser     = "elasticsearchuser"
-	SecretKeyElasticSearchPassword = "elasticsearchpassword"
+	// Logging config secret name
+	CoherenceMonitoringConfigName = "coherence-monitoring-config"
+
+	// Logging config keys
+	LoggingConfigKeyElasticSearchHost  = "elasticsearchhost"
+	LoggingConfigElasticSearchPort     = "elasticsearchport"
+	LoggingConfigElasticSearchUser     = "elasticsearchuser"
+	LoggingConfigElasticSearchPassword = "elasticsearchpassword"
 
 	DefaultLoggingConfig = "/scripts/logging.properties"
 

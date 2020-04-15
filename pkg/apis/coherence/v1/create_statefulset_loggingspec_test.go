@@ -298,9 +298,9 @@ func createExpectedFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: coh.SecretNameCoherenceMonitoringConfig,
+							Name: coh.CoherenceMonitoringConfigName,
 						},
-						Key: coh.SecretKeyElasticSearchHost,
+						Key: coh.LoggingConfigKeyElasticSearchHost,
 					},
 				},
 			},
@@ -309,9 +309,9 @@ func createExpectedFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: coh.SecretNameCoherenceMonitoringConfig,
+							Name: coh.CoherenceMonitoringConfigName,
 						},
-						Key: coh.SecretKeyElasticSearchPort,
+						Key: coh.LoggingConfigElasticSearchPort,
 					},
 				},
 			},
@@ -320,9 +320,9 @@ func createExpectedFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: coh.SecretNameCoherenceMonitoringConfig,
+							Name: coh.CoherenceMonitoringConfigName,
 						},
-						Key: coh.SecretKeyElasticSearchUser,
+						Key: coh.LoggingConfigElasticSearchUser,
 					},
 				},
 			},
@@ -331,9 +331,9 @@ func createExpectedFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: coh.SecretNameCoherenceMonitoringConfig,
+							Name: coh.CoherenceMonitoringConfigName,
 						},
-						Key: coh.SecretKeyElasticSearchPassword,
+						Key: coh.LoggingConfigElasticSearchPassword,
 					},
 				},
 			},

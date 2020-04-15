@@ -971,6 +971,7 @@ copyright:
 	  -X sdk/ \
 	  -X .sh \
 	  -X temp/ \
+	  -X temp/olm/ \
 	  -X /test-report.xml \
 	  -X THIRD_PARTY_LICENSES.txt \
 	  -X tools.go \

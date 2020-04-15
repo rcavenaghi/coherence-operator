@@ -844,13 +844,14 @@ func (in *LoggingSpec) UpdateStatefulSet(sts *appsv1.StatefulSet, hasApp bool) {
 	}
 
 	if in.ConfigFile != nil && *in.ConfigFile != "" {
-		if in.ConfigMapName != nil && *in.ConfigMapName != "" {
+		switch {
+		case in.ConfigMapName != nil && *in.ConfigMapName != "":
 			// Logging config should come from the ConfigMap
 			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: VolumeMountPathLoggingConfig + "/" + *in.ConfigFile})
-		} else if hasApp {
+		case hasApp:
 			// Logging config should come from the external config directory
 			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: ExternalConfDir + "/" + *in.ConfigFile})
-		} else {
+		default:
 			// Logging config is as set
 			c.Env = append(c.Env, corev1.EnvVar{Name: "COH_LOGGING_CONFIG", Value: *in.ConfigFile})
 		}
@@ -1564,7 +1565,7 @@ func (in *JvmDebugSpec) DeepCopyWithDefaults(defaults *JvmDebugSpec) *JvmDebugSp
 
 // Update the Coherence Container with any JVM specific settings
 func (in *JvmDebugSpec) UpdateCoherenceContainer(c *corev1.Container) {
-	if in == nil || in.Enabled == nil || *in.Enabled == false {
+	if in == nil || in.Enabled == nil || !*in.Enabled {
 		// nothing to do, debug is either nil or disabled
 		return
 	}
@@ -2660,9 +2661,9 @@ func (in *FluentdSpec) CreateFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: SecretNameCoherenceMonitoringConfig,
+							Name: CoherenceMonitoringConfigName,
 						},
-						Key: SecretKeyElasticSearchHost,
+						Key: LoggingConfigKeyElasticSearchHost,
 					},
 				},
 			},
@@ -2671,9 +2672,9 @@ func (in *FluentdSpec) CreateFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: SecretNameCoherenceMonitoringConfig,
+							Name: CoherenceMonitoringConfigName,
 						},
-						Key: SecretKeyElasticSearchPort,
+						Key: LoggingConfigElasticSearchPort,
 					},
 				},
 			},
@@ -2682,9 +2683,9 @@ func (in *FluentdSpec) CreateFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: SecretNameCoherenceMonitoringConfig,
+							Name: CoherenceMonitoringConfigName,
 						},
-						Key: SecretKeyElasticSearchUser,
+						Key: LoggingConfigElasticSearchUser,
 					},
 				},
 			},
@@ -2693,9 +2694,9 @@ func (in *FluentdSpec) CreateFluentdContainer() corev1.Container {
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: SecretNameCoherenceMonitoringConfig,
+							Name: CoherenceMonitoringConfigName,
 						},
-						Key: SecretKeyElasticSearchPassword,
+						Key: LoggingConfigElasticSearchPassword,
 					},
 				},
 			},
@@ -2984,16 +2985,14 @@ type StartQuorumStatus struct {
 
 func MergeStringSlice(s1, s2 []string) []string {
 	m := make(map[string]int)
-	if s2 != nil {
-		for _, eip := range s2 {
-			m[eip] = 0
-		}
+	for _, eip := range s2 {
+		m[eip] = 0
 	}
-	if s1 != nil {
-		for _, eip := range s1 {
-			m[eip] = 0
-		}
+
+	for _, eip := range s1 {
+		m[eip] = 0
 	}
+
 	var merged []string
 	for k := range m {
 		merged = append(merged, k)
