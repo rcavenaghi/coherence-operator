@@ -34,9 +34,7 @@ func TestCoherenceDefaults(t *testing.T) {
 
 	// Assert default environment variables
 	g.Expect(appData.GetEnv("COH_MGMT_ENABLED")).To(Equal("false"))
-	g.Expect(appData.GetEnv("COH_MGMT_PORT")).To(Equal("30000"))
 	g.Expect(appData.GetEnv("COH_METRICS_ENABLED")).To(Equal("false"))
-	g.Expect(appData.GetEnv("COH_METRICS_PORT")).To(Equal("9612"))
 
 	// Last but one arg should be the Operator's custom main
 	g.Expect(appData.Args[len(appData.Args)-2]).To(Equal("com.oracle.coherence.k8s.Main"))
