@@ -14,10 +14,6 @@ import (
 	"github.com/go-test/deep"
 	. "github.com/onsi/gomega"
 	coh "github.com/oracle/coherence-operator/pkg/apis/coherence/v1"
-	"github.com/oracle/coherence-operator/pkg/controller/coherencecluster"
-	"github.com/oracle/coherence-operator/pkg/controller/coherencerole"
-	stubs "github.com/oracle/coherence-operator/pkg/fakes"
-	"github.com/oracle/coherence-operator/pkg/flags"
 	"github.com/oracle/coherence-operator/test/e2e/helper"
 	"io/ioutil"
 	appsv1 "k8s.io/api/apps/v1"
@@ -625,10 +621,6 @@ func createTestCluster(role coh.CoherenceRoleSpec) *coh.CoherenceCluster {
 }
 
 func assertStatefulSetCreation(t *testing.T, role coh.CoherenceRoleSpec, cluster *coh.CoherenceCluster, stsExpected *appsv1.StatefulSet) {
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, true)
-}
-
-func assertStatefulSetCreationWithHelmVerify(t *testing.T, role coh.CoherenceRoleSpec, cluster *coh.CoherenceCluster, stsExpected *appsv1.StatefulSet, doHelm bool) {
 	ensureRoleSpecHasImages(&role)
 
 	stsActual := role.CreateStatefulSet(cluster)
@@ -636,51 +628,4 @@ func assertStatefulSetCreationWithHelmVerify(t *testing.T, role coh.CoherenceRol
 	stsActual.TypeMeta.APIVersion = "apps/v1"
 
 	assertStatefulSet(t, stsActual, stsExpected)
-
-	// verify against what Helm would have created - this will be removed eventually.
-	g := NewGomegaWithT(t)
-
-	if doHelm {
-		t.Log("Checking against Helm install...")
-		result, _, err := DoHelmInstall(*cluster, "test-namespace")
-		g.Expect(err).NotTo(HaveOccurred())
-
-		// Obtain the StatefulSet that Helm would have created
-		stsHelm, err := findStatefulSet(result, cluster, role.GetRoleName())
-		g.Expect(err).NotTo(HaveOccurred())
-		assertStatefulSet(t, stsActual, &stsHelm)
-	}
-}
-
-// Use the specified CoherenceCluster to trigger a fake end-to-end reconcile to
-// obtain the resources that would have been created by the Helm operator.
-func DoHelmInstall(cluster coh.CoherenceCluster, namespace string) (*stubs.HelmInstallResult, *coh.CoherenceCluster, error) {
-	mgr, err := stubs.NewFakeManager()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	opFlags := &flags.CoherenceOperatorFlags{}
-	cr := coherencecluster.NewClusterReconciler(mgr, opFlags)
-	// skip initialization for unit tests
-	cr.SetInitialized(true)
-	rr := coherencerole.NewRoleReconciler(mgr, opFlags)
-	// skip initialization for unit tests
-	rr.SetInitialized(true)
-	helm, err := stubs.NewFakeHelm(mgr, cr, rr, namespace)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	r, err := helm.HelmInstallFromCoherenceCluster(&cluster)
-
-	return r, &cluster, err
-}
-
-// Shared function to find a StatefulSet in a Helm result.
-func findStatefulSet(result *stubs.HelmInstallResult, cluster *coh.CoherenceCluster, roleName string) (appsv1.StatefulSet, error) {
-	name := cluster.GetFullRoleName(roleName)
-	sts := appsv1.StatefulSet{}
-	err := result.Get(name, &sts)
-	return sts, err
 }

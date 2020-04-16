@@ -7,7 +7,6 @@
 package v1_test
 
 import (
-	"fmt"
 	"github.com/go-test/deep"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -292,7 +291,7 @@ func TestNamedPortSpec_CreateServiceWithMinimalFields(t *testing.T) {
 	}
 
 	labels := r.CreateCommonLabels(&c)
-	labels[coh.LabelComponent] = fmt.Sprintf(coh.LabelComponentPortServiceTemplate, np.Name)
+	labels[coh.LabelComponent] = coh.LabelComponentPortService
 
 	selector := r.CreateCommonLabels(&c)
 	selector[coh.LabelComponent] = coh.LabelComponentCoherencePod
@@ -404,7 +403,7 @@ func TestNamedPortSpec_CreateServiceWithService(t *testing.T) {
 	}
 
 	labels := r.CreateCommonLabels(&c)
-	labels[coh.LabelComponent] = fmt.Sprintf(coh.LabelComponentPortServiceTemplate, np.Name)
+	labels[coh.LabelComponent] = coh.LabelComponentPortService
 
 	selector := r.CreateCommonLabels(&c)
 	selector[coh.LabelComponent] = coh.LabelComponentCoherencePod

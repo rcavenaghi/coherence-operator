@@ -304,7 +304,7 @@ test-operator: export HELM_COHERENCE_IMAGE := $(HELM_COHERENCE_IMAGE)
 test-operator: export UTILS_IMAGE := $(UTILS_IMAGE)
 test-operator: build-operator
 	@echo "Running operator tests"
-	go test $(GO_TEST_FLAGS) -v ./cmd/... ./pkg/... ./pkg/helm_test/... \
+	go test $(GO_TEST_FLAGS) -v ./cmd/... ./pkg/... \
 	2>&1 | tee $(TEST_LOGS_DIR)/operator-test.out
 	go run ./cmd/testreports/ -fail -suite-name-prefix=operator-test/ \
 	    -input $(TEST_LOGS_DIR)/operator-test.out \

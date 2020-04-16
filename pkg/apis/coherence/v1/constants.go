@@ -18,8 +18,7 @@ const (
 	LabelComponentCoherenceHeadless    = "coherence-headless"
 	LabelComponentEfkConfig            = "coherence-efk-config"
 	LabelComponentPVC                  = "coherence-volume"
-
-	LabelComponentPortServiceTemplate = "coherence-service-%s"
+	LabelComponentPortService          = "coherence-service"
 
 	EfkConfigMapNameTemplate = "%s-efk-config"
 

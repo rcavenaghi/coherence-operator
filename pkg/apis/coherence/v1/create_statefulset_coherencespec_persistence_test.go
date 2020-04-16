@@ -105,7 +105,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabled(t *t
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithPVC(t *testing.T) {
@@ -160,7 +160,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithP
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithVolume(t *testing.T) {
@@ -203,7 +203,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithV
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithVolumeAndPvcVolumeOnlyIsAdded(t *testing.T) {
@@ -258,7 +258,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceDisabledAndSnapshotEnabledWithV
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceEnabledSnapshotDisabled(t *testing.T) {
@@ -301,7 +301,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceEnabledSnapshotDisabled(t *test
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithPVCAndSnapshotDisabled(t *testing.T) {
@@ -356,7 +356,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithPVCAndSnapshotDisabl
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithVolumeAndSnapshotDisabled(t *testing.T) {
@@ -399,7 +399,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithVolumeAndSnapshotDis
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithVolumeAndPvcAndSnapshotDisabledVolumeOnlyIsAdded(t *testing.T) {
@@ -454,7 +454,7 @@ func TestCreateStatefulSetFromRoleWithPersistenceEnabledWithVolumeAndPvcAndSnaps
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithPersistenceEnabledSnapshotEnabled(t *testing.T) {
@@ -513,5 +513,5 @@ func TestCreateStatefulSetFromRoleWithPersistenceEnabledSnapshotEnabled(t *testi
 	})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }

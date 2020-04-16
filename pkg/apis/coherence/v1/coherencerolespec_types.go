@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	"strconv"
@@ -574,8 +573,8 @@ func (in *CoherenceRoleSpec) mergeVolumes(primary, secondary []corev1.Volume) []
 // Create the Kubernetes resources that should be deployed for this role.
 // The order of the resources in the returned array is the order that they should be
 // created or updated in Kubernetes.
-func (in *CoherenceRoleSpec) CreateKubernetesResources(cluster *CoherenceCluster) ([]runtime.Object, error) {
-	var res []runtime.Object
+func (in *CoherenceRoleSpec) CreateKubernetesResources(cluster *CoherenceCluster) ([]metav1.Object, error) {
+	var res []metav1.Object
 
 	// Create the fluentd ConfigMap if required
 	if in.Logging.IsFluentdEnabled() {
@@ -593,13 +592,28 @@ func (in *CoherenceRoleSpec) CreateKubernetesResources(cluster *CoherenceCluster
 	res = append(res, in.CreateStatefulSet(cluster))
 
 	// Create the Services for each port
+	res = append(res, in.CreateServicesForPort(cluster)...)
+
+	return res, nil
+}
+
+// Create the role's common label set.
+func (in *CoherenceRoleSpec) CreateServicesForPort(cluster *CoherenceCluster) []metav1.Object {
+	var services []metav1.Object
+
+	if in == nil || in.Ports == nil || len(in.Ports) == 0 {
+		return services
+	}
+
+	// Create the Services for each port
 	for _, p := range in.Ports {
-		if p.IsEnabled() {
-			res = append(res, p.CreateService(cluster, in))
+		service := p.CreateService(cluster, in)
+		if service != nil {
+			services = append(services, service)
 		}
 	}
 
-	return res, nil
+	return services
 }
 
 // Create the role's common label set.

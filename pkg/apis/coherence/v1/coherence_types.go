@@ -1369,6 +1369,10 @@ func (in *NamedPortSpec) DeepCopyWithDefaults(defaults *NamedPortSpec) *NamedPor
 
 // Create the Kubernetes service to expose this port.
 func (in *NamedPortSpec) CreateService(cluster *CoherenceCluster, role *CoherenceRoleSpec) *corev1.Service {
+	if in == nil || !in.IsEnabled() {
+		return nil
+	}
+
 	var name string
 	if in.Service != nil && in.Service.Name != nil {
 		name = in.Service.GetName()
@@ -1378,7 +1382,7 @@ func (in *NamedPortSpec) CreateService(cluster *CoherenceCluster, role *Coherenc
 
 	// The labels for the service
 	svcLabels := role.CreateCommonLabels(cluster)
-	svcLabels[LabelComponent] = fmt.Sprintf(LabelComponentPortServiceTemplate, in.Name)
+	svcLabels[LabelComponent] = LabelComponentPortService
 	if in.Service != nil {
 		for k, v := range in.Service.Labels {
 			svcLabels[k] = v

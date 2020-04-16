@@ -113,7 +113,7 @@ func TestCreateStatefulSetFromRoleWithReadinessProbeSpecWithHttpGet(t *testing.T
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithReadinessProbeSpecWithTCPSocket(t *testing.T) {
@@ -154,7 +154,7 @@ func TestCreateStatefulSetFromRoleWithReadinessProbeSpecWithTCPSocket(t *testing
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithReadinessProbeSpecWithExec(t *testing.T) {
@@ -194,7 +194,7 @@ func TestCreateStatefulSetFromRoleWithReadinessProbeSpecWithExec(t *testing.T) {
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithEmptyLivenessProbeSpec(t *testing.T) {
@@ -297,7 +297,7 @@ func TestCreateStatefulSetFromRoleWithLivenessProbeSpecWithHttpGet(t *testing.T)
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithLivenessProbeSpecWithTCPSocket(t *testing.T) {
@@ -338,7 +338,7 @@ func TestCreateStatefulSetFromRoleWithLivenessProbeSpecWithTCPSocket(t *testing.
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithLivenessProbeSpecWithExec(t *testing.T) {
@@ -378,5 +378,5 @@ func TestCreateStatefulSetFromRoleWithLivenessProbeSpecWithExec(t *testing.T) {
 	}
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }

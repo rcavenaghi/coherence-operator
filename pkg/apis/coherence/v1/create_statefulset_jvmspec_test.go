@@ -95,7 +95,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithUseContainerLimitsFalse(t *test
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_USE_CONTAINER_LIMITS", Value: "false"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithUseFlightRecorderTrue(t *testing.T) {
@@ -131,7 +131,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithUseFlightRecorderFalse(t *testi
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_FLIGHT_RECORDER", Value: "false"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithDebugEnabledFalse(t *testing.T) {
@@ -275,7 +275,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithGarbageCollectorLoggingFalse(t 
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_GC_LOGGING", Value: "false"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithGarbageCollectorLoggingTrue(t *testing.T) {
@@ -395,7 +395,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithExitOnOomFalse(t *testing.T) {
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_OOM_EXIT", Value: "false"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithHeapDumpOnOomTrue(t *testing.T) {
@@ -439,7 +439,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithHeapDumpOnOomFalse(t *testing.T
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_OOM_HEAP_DUMP", Value: "false"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithJmxmpEnabledTrue(t *testing.T) {
@@ -481,7 +481,7 @@ func TestCreateStatefulSetFromRoleWithJvmSpecWithJmxmpEnabledFalse(t *testing.T)
 	addEnvVars(stsExpected, coh.ContainerNameCoherence, corev1.EnvVar{Name: "JVM_JMXMP_PORT", Value: "9099"})
 
 	// assert that the StatefulSet is as expected
-	assertStatefulSetCreationWithHelmVerify(t, role, cluster, stsExpected, false)
+	assertStatefulSetCreation(t, role, cluster, stsExpected)
 }
 
 func TestCreateStatefulSetFromRoleWithJvmSpecWithJmxmpEnabledWithPort(t *testing.T) {
