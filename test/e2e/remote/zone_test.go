@@ -33,7 +33,7 @@ func TestSiteLabel(t *testing.T) {
 	}
 
 	dfn := func(namespace string) string {
-		return fmt.Sprintf("coherence.%s.svc.cluster.local", namespace)
+		return fmt.Sprintf("test-cluster-one.%s.svc.cluster.local", namespace)
 	}
 
 	assertLabel(t, flags.DefaultSiteLabel, fn, dfn)
